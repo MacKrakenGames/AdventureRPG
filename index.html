@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>AI Adventure MVP v3 (Map)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .hitbox{position:absolute;border:2px dashed rgba(255,255,255,.85);background:rgba(255,255,255,.08);cursor:pointer;backdrop-filter:blur(1px)}
+    .hitbox:hover{background:rgba(255,255,255,.18)}
+    .tag{position:absolute;top:-1.75rem;left:0;padding:2px 6px;font-size:12px;border-radius:.5rem;background:rgba(17,24,39,.9);color:#fff;white-space:nowrap;pointer-events:none}
+    .image-wrap{position:relative}
+    .popover{position:absolute;z-index:30;width:220px;background:rgba(15,23,42,.98);border:1px solid rgba(51,65,85,.7);border-radius:.5rem;padding:.5rem;box-shadow:0 8px 24px rgba(0,0,0,.35)}
+    .popover button{width:100%;text-align:left}
+    .sprite{width:42px;height:42px;border-radius:.6rem;border:1px solid rgba(148,163,184,.35);background:rgba(2,6,23,.6);overflow:hidden;position:relative}
+    .sprite img{width:100%;height:100%;object-fit:cover;display:block}
+    .sprite.selected{outline:2px solid #38bdf8}
+    .sprite[data-dragging="true"]{outline:2px dashed #38bdf8;opacity:.85}
+    .tooltip{position:absolute;z-index:40;pointer-events:none;background:rgba(15,23,42,.98);border:1px solid rgba(51,65,85,.7);padding:.25rem .5rem;border-radius:.375rem;font-size:12px;color:#e5e7eb;white-space:nowrap;transform:translate(-50%,-120%)}
+    .grab-hint{position:fixed;z-index:50;left:50%;bottom:12px;transform:translateX(-50%);background:rgba(2,6,23,.85);border:1px solid rgba(148,163,184,.3);color:#e5e7eb;font-size:12px;padding:.35rem .6rem;border-radius:.5rem}
+    /* Map */
+    .map-card{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.5);z-index:60}
+    .map-card .panel{background:#0b1220;border:1px solid rgba(148,163,184,.3);border-radius:.75rem;padding:1rem;max-width:420px;width:92%}
+  </style>
+</head>
+<body class="min-h-screen bg-slate-950 text-slate-100">
+  <div class="max-w-7xl mx-auto px-4 py-6 space-y-4">
+    <header class="flex items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <h1 class="text-2xl font-bold">AI Choose-Your-Own-Adventure</h1>
+        <span id="status" class="text-xs px-2 py-1 rounded bg-slate-800">Ready</span>
+      </div>
+      <div class="flex items-center gap-2 text-xs">
+        <button id="reset-btn" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700">Reset</button>
+      </div>
+    </header>
+
+    <!-- Start Scenarios -->
+    <section class="bg-slate-900/60 rounded-xl p-4">
+      <h2 class="font-semibold mb-2">Start a new adventure</h2>
+      <div id="start-buttons" class="flex flex-wrap gap-2"></div>
+    </section>
+
+    <!-- Main Grid: add Map as 4th column -->
+    <section class="grid 2xl:grid-cols-[1fr,320px,280px,360px] xl:grid-cols-[1fr,320px,280px] gap-4">
+      <!-- Scene & Options -->
+      <div class="grid md:grid-cols-2 gap-4 2xl:col-span-1 xl:col-span-1">
+        <div class="bg-slate-900/60 rounded-xl p-4">
+          <h3 class="font-semibold mb-2">Scene</h3>
+          <div id="scene-desc" class="text-sm text-slate-300 mb-3"></div>
+          <div class="image-wrap rounded-lg overflow-hidden border border-slate-800">
+            <img id="scene-img" class="w-full block" alt="" crossorigin="anonymous" />
+            <div id="overlay"></div>
+          </div>
+          <div class="text-xs text-slate-400 mt-2">
+            Tips: drag an item onto a region (desktop) • long-press an item then tap a region (mobile) • tiny objects can be <em>Taken</em>.
+          </div>
+        </div>
+
+        <div class="bg-slate-900/60 rounded-xl p-4">
+          <h3 class="font-semibold mb-2">What will you do?</h3>
+          <div id="options" class="flex flex-col gap-2"></div>
+          <div class="mt-4 flex items-center gap-2">
+            <button id="regen-btn" class="text-xs px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-700">
+              Regenerate variations for this scene
+            </button>
+            <div id="grab-hint" class="grab-hint hidden">Grabbed item — tap a target</div>
+          </div>
+          <div class="mt-4 text-xs text-slate-400" id="log"></div>
+        </div>
+      </div>
+
+      <!-- Backpack -->
+      <aside class="bg-slate-900/60 rounded-xl p-4">
+        <div class="flex items-center justify-between">
+          <h3 class="font-semibold mb-2">Backpack</h3>
+          <span id="bp-count" class="text-xs text-slate-400"></span>
+        </div>
+        <div id="backpack" class="flex flex-wrap gap-2"></div>
+        <div class="text-xs text-slate-400 mt-3">
+          Click an item to select it, then click a region to use it — or drag it directly (desktop).
+        </div>
+      </aside>
+
+      <!-- History -->
+      <aside class="bg-slate-900/60 rounded-xl p-4 xl:block hidden">
+        <div class="flex items-center justify-between">
+          <h3 class="font-semibold">History</h3>
+          <div class="flex gap-2">
+            <button id="hist-back" class="text-xs px-2 py-1 rounded bg-slate-800 hover:bg-slate-700">Back</button>
+            <button id="hist-forward" class="text-xs px-2 py-1 rounded bg-slate-800 hover:bg-slate-700">Forward</button>
+          </div>
+        </div>
+        <div id="history-list" class="mt-3 flex flex-col gap-1 text-xs"></div>
+      </aside>
+
+      <!-- NEW: Map panel -->
+      <aside class="bg-slate-900/60 rounded-xl p-4 2xl:block hidden">
+        <div class="flex items-center justify-between">
+          <h3 class="font-semibold">Map</h3>
+          <div class="text-xs text-slate-400" id="map-summary"></div>
+        </div>
+        <div class="rounded-lg border border-slate-800 overflow-hidden">
+          <svg id="map-svg" viewBox="0 0 600 420" preserveAspectRatio="xMidYMid meet" style="width:100%;height:360px;background:linear-gradient(180deg,#0b1220,#0a152a)"></svg>
+        </div>
+        <div class="text-xs text-slate-400 mt-2">Pins show places discovered; filled pins are visited. Click a pin to open.</div>
+      </aside>
+    </section>
+  </div>
+
+  <!-- NEW: simple place card modal -->
+  <div id="place-card" class="map-card">
+    <div class="panel">
+      <div class="flex items-start justify-between gap-3 mb-2">
+        <div>
+          <div id="pc-name" class="font-semibold"></div>
+          <div id="pc-tags" class="text-xs text-slate-400"></div>
+        </div>
+        <button id="pc-close" class="text-xs px-2 py-1 rounded bg-slate-800 hover:bg-slate-700">Close</button>
+      </div>
+      <div id="pc-notes" class="text-sm text-slate-300 mb-3"></div>
+      <div class="flex gap-2">
+        <button id="pc-travel" class="px-3 py-2 rounded bg-slate-800 hover:bg-slate-700">Fast travel here</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- NEW: map module BEFORE main.js -->
+  <script src="./map.js"></script>
+  <script src="./main.js"></script>
+</body>
+</html>
