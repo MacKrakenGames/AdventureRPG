@@ -1,26 +1,26 @@
-// Extracts places/relations from a scene (Responses API with text.format=json)
-
+// netlify/functions/mapFacts.js
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
 async function openai(path, body) {
   const res = await fetch(`https://api.openai.com/v1/${path}`, {
     method: "POST",
-    headers: {
-      "Authorization": `Bearer ${OPENAI_API_KEY}`,
-      "Content-Type": "application/json"
-    },
+    headers: { "Authorization": `Bearer ${OPENAI_API_KEY}`, "Content-Type": "application/json" },
     body: JSON.stringify(body)
   });
   const json = await res.json();
-  if (!res.ok) {
-    const msg = json?.error?.message || JSON.stringify(json);
-    throw new Error(msg);
-  }
+  if (!res.ok) throw new Error(json?.error?.message || JSON.stringify(json));
   return json;
 }
 
 function getOutputText(resp) {
   return resp.output_text || resp.output?.[0]?.content?.[0]?.text || "";
+}
+function extractJson(resp) {
+  const s = getOutputText(resp) || "";
+  try { return JSON.parse(s); } catch {}
+  const m = s.match(/\{[\s\S]*\}/);
+  if (m) { try { return JSON.parse(m[0]); } catch {} }
+  return { places: [], relations: [], current_place_id: "" };
 }
 
 exports.handler = async (event) => {
@@ -32,18 +32,19 @@ exports.handler = async (event) => {
     const { sceneDesc, knownPlaces } = body;
 
     const sys =
-      "Extract world-map facts from a single fantasy scene. " +
-      "Return STRICT JSON with keys: places, relations, current_place_id.\n" +
+      "Extract world-map facts from a single fantasy scene.\n" +
+      "Return STRICT JSON ONLY with keys: places, relations, current_place_id.\n" +
       "Schema:\n" +
       "{ places:[{name:string,id:string,tags:string[],notes:string}], " +
       "  relations:[{a:string,b:string,type:'near'|'path'|'door'|'road'|'river',bearing?:'N'|'NE'|'E'|'SE'|'S'|'SW'|'W'|'NW',distance?:1|2|3}], " +
       "  current_place_id:string }\n" +
       "Rules: 1) Prefer 0-2 relations. 2) If a place matches an existing name from KNOWN, reuse its id (slug of name). " +
-      "3) If no clear location, create one from the dominant setting noun phrase (e.g., 'Misty Harbor', 'Ancient Library Entrance'). " +
+      "3) If no clear location, create one from the dominant setting noun phrase. " +
       "4) Set current_place_id to where the scene primarily occurs. 5) Keep notes short (<= 24 words).";
 
     const user =
-      `SCENE:\n"""${sceneDesc}"""\n\nKNOWN PLACE NAMES:\n${(knownPlaces || []).join(", ") || "(none)"}`;
+      `SCENE:\n"""${sceneDesc}"""\n\nKNOWN PLACE NAMES:\n${(knownPlaces || []).join(", ") || "(none)"}\n` +
+      "Respond with JSON only; no prose outside the JSON.";
 
     const resp = await openai("responses", {
       model: "gpt-4o-mini",
@@ -51,13 +52,10 @@ exports.handler = async (event) => {
         { role: "system", content: sys },
         { role: "user", content: user }
       ],
-      // NEW:
-      text: { format: "json" }
+      // REMOVED: text.format / text_format
     });
 
-    let parsed;
-    try { parsed = JSON.parse(getOutputText(resp)); }
-    catch { parsed = { places: [], relations: [], current_place_id: "" }; }
+    let parsed = extractJson(resp);
 
     const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
     parsed.places = (parsed.places || []).map(p => ({
@@ -67,7 +65,8 @@ exports.handler = async (event) => {
       notes: String(p.notes || "").slice(0, 140)
     }));
     parsed.relations = (parsed.relations || []).map(r => ({
-      a: r.a || "", b: r.b || "", type: ["near","path","door","road","river"].includes(r.type) ? r.type : "near",
+      a: r.a || "", b: r.b || "",
+      type: ["near","path","door","road","river"].includes(r.type) ? r.type : "near",
       bearing: ["N","NE","E","SE","S","SW","W","NW"].includes(r.bearing) ? r.bearing : undefined,
       distance: [1,2,3].includes(r.distance) ? r.distance : undefined
     }));
