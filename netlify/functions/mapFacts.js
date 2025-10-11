@@ -1,4 +1,5 @@
-// netlify/functions/mapFacts.js
+// Extracts places/relations from a scene (Responses API with text.format=json)
+
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
 async function openai(path, body) {
@@ -16,6 +17,10 @@ async function openai(path, body) {
     throw new Error(msg);
   }
   return json;
+}
+
+function getOutputText(resp) {
+  return resp.output_text || resp.output?.[0]?.content?.[0]?.text || "";
 }
 
 exports.handler = async (event) => {
@@ -42,21 +47,18 @@ exports.handler = async (event) => {
 
     const resp = await openai("responses", {
       model: "gpt-4o-mini",
-      response_format: { type: "json_object" },
       input: [
         { role: "system", content: sys },
         { role: "user", content: user }
-      ]
+      ],
+      // NEW:
+      text: { format: "json" }
     });
 
     let parsed;
-    try {
-      parsed = JSON.parse(resp.output[0].content[0].text);
-    } catch {
-      parsed = { places: [], relations: [], current_place_id: "" };
-    }
+    try { parsed = JSON.parse(getOutputText(resp)); }
+    catch { parsed = { places: [], relations: [], current_place_id: "" }; }
 
-    // basic sanitation
     const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
     parsed.places = (parsed.places || []).map(p => ({
       name: String(p.name || "").slice(0, 60),
