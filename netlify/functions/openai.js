@@ -1,3 +1,6 @@
+// Netlify serverless function (Node 18+).
+// Ops: "scene" -> create scene + image; "segment" -> vision boxes; "use" -> apply item to region.
+
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
 async function openai(path, body) {
@@ -17,10 +20,18 @@ async function openai(path, body) {
   return json;
 }
 
+// Utility: pull string JSON from Responses API (supports new shape)
+function getOutputText(resp) {
+  // New Responses API exposes a convenience field:
+  if (resp.output_text) return resp.output_text;
+  // Fallback for older shapes:
+  return resp.output?.[0]?.content?.[0]?.text || "";
+}
+
 async function createScene({ prompt, context }) {
+  // 1) Ask model for JSON (scene_description, image_prompt, options[4])
   const sceneResp = await openai("responses", {
     model: "gpt-4o",
-    response_format: { type: "json_object" },
     input: [
       {
         role: "system",
@@ -35,13 +46,16 @@ async function createScene({ prompt, context }) {
           `Create a first-person scene from: "${prompt}". ${context || ""}\n` +
           "Return JSON only. The image_prompt must describe what to render visually; no camera jargon."
       }
-    ]
+    ],
+    // NEW: use text.format instead of response_format
+    text: { format: "json" }
   });
 
   let parsed;
-  try { parsed = JSON.parse(sceneResp.output[0].content[0].text); }
+  try { parsed = JSON.parse(getOutputText(sceneResp)); }
   catch { throw new Error("Scene JSON parse failed"); }
 
+  // 2) Generate an image
   const imgResp = await openai("images", {
     model: "gpt-image-1",
     prompt: parsed.image_prompt,
@@ -61,7 +75,6 @@ async function createScene({ prompt, context }) {
 async function segmentImage({ imageUrl }) {
   const segResp = await openai("responses", {
     model: "gpt-4o",
-    response_format: { type: "json_object" },
     input: [
       {
         role: "system",
@@ -78,11 +91,13 @@ async function segmentImage({ imageUrl }) {
           { type: "input_image", image_url: imageUrl }
         ]
       }
-    ]
+    ],
+    // NEW:
+    text: { format: "json" }
   });
 
   let parsed;
-  try { parsed = JSON.parse(segResp.output[0].content[0].text); }
+  try { parsed = JSON.parse(getOutputText(segResp)); }
   catch { parsed = { regions: [] }; }
 
   const regions = (parsed.regions || [])
@@ -99,7 +114,6 @@ async function segmentImage({ imageUrl }) {
 async function useItem({ sceneDesc, itemLabel, targetLabel }) {
   const useResp = await openai("responses", {
     model: "gpt-4o",
-    response_format: { type: "json_object" },
     input: [
       {
         role: "system",
@@ -117,11 +131,13 @@ async function useItem({ sceneDesc, itemLabel, targetLabel }) {
           `Player uses: "${itemLabel}" on "${targetLabel}".\n` +
           "Describe the new resulting scene in second person, then give 4 next-step options. Return JSON only."
       }
-    ]
+    ],
+    // NEW:
+    text: { format: "json" }
   });
 
   let parsed;
-  try { parsed = JSON.parse(useResp.output[0].content[0].text); }
+  try { parsed = JSON.parse(getOutputText(useResp)); }
   catch { throw new Error("Use JSON parse failed"); }
 
   const imgResp = await openai("images", {
