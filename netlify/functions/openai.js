@@ -64,7 +64,7 @@ exports.handler = async (event) => {
           model: "gpt-image-1",
           prompt,
           n: 1,
-          size: "1024x1024"
+          size: "512x512"
           // For gpt-image-1, response_format is always base64; no need to specify
         });
 
@@ -157,7 +157,7 @@ exports.handler = async (event) => {
           model: "gpt-image-1",
           prompt: next_prompt || `A closer view focusing on the ${label}`,
           n: 1,
-          size: "1024x1024"
+          size: "512x512"
         });
 
         const b64 = img.data?.[0]?.b64_json;
