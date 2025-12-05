@@ -5,19 +5,122 @@
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>Point & Click MVP</title>
   <style>
-    body { font-family: system-ui, sans-serif; background:#0b1220; color:#e5e7eb; margin:0; }
-    .wrap { max-width: 920px; margin: 24px auto; padding: 0 12px; }
-    .row { display:flex; gap:16px; align-items:flex-start; }
-    .col { flex:1; }
-    .card { background:#0f172a; border:1px solid #1f2937; border-radius:12px; padding:12px; }
-    .btn { background:#1f2937; color:#e5e7eb; border:0; padding:8px 12px; border-radius:8px; cursor:pointer; }
-    .btn:disabled { opacity: .5; cursor: not-allowed; }
-    #status { font-size:12px; opacity:.8; }
-    /* Fixed pixel box: 768 x 512 coordinate system */
-    #stage { width:768px; height:512px; position:relative; background:#0a1224; border-radius:10px; overflow:hidden; }
-    #imgCanvas { position:absolute; left:0; top:0; width:768px; height:512px; image-rendering: crisp-edges; }
-    #hud { margin-top:8px; font-size:12px; white-space: pre; }
-    #log { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:12px; white-space: pre-wrap; max-height:140px; overflow:auto; }
+    :root {
+      color-scheme: dark;
+    }
+    * {
+      box-sizing: border-box;
+    }
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow-x: hidden; /* prevent horizontal scroll */
+      background: #020617;
+      color: #e5e7eb;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    .wrap {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 16px 12px 32px;
+    }
+    h1 {
+      font-size: 1.35rem;
+      margin: 0 0 4px;
+    }
+    #status {
+      font-size: 0.8rem;
+      opacity: 0.85;
+    }
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 12px;
+    }
+    .col {
+      flex: 1 1 260px;
+      min-width: 0;
+    }
+    .card {
+      background: #020617;
+      border-radius: 12px;
+      padding: 10px;
+      border: 1px solid #1f2937;
+    }
+    .btn {
+      background: #111827;
+      color: #e5e7eb;
+      border: 1px solid #1f2937;
+      padding: 6px 10px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .btn:hover:not(:disabled) {
+      background: #1f2937;
+    }
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    #hud {
+      margin-top: 6px;
+      font-size: 0.75rem;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+    /* Stage + canvas: responsive, but fixed coordinate system 768x512 */
+    #stage {
+      margin: 8px auto 0;
+      width: 100%;
+      max-width: 768px;
+      border-radius: 12px;
+      background: #020617;
+      border: 1px solid #1f2937;
+      overflow: hidden;
+      position: relative;
+    }
+    #stageInner {
+      position: relative;
+      width: 100%;
+      padding-top: calc(512 / 768 * 100%); /* keep aspect ratio box */
+    }
+    #imgCanvas {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;   /* scales visually */
+      height: 100%;
+      image-rendering: crisp-edges;
+    }
+    #log {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 0.75rem;
+      white-space: pre-wrap;
+      max-height: 220px;
+      overflow-y: auto;
+      margin-top: 6px;
+    }
+    strong {
+      font-size: 0.85rem;
+    }
+
+    /* Mobile tweaks */
+    @media (max-width: 640px) {
+      .wrap {
+        padding: 12px 8px 24px;
+      }
+      .row {
+        flex-direction: column;
+      }
+      #log {
+        max-height: 160px;
+      }
+    }
   </style>
 </head>
 <body>
@@ -25,21 +128,26 @@
     <h1>Point & Click MVP</h1>
     <div id="status">Ready</div>
 
-    <div class="row" style="margin-top:12px">
+    <div class="row">
       <div class="col card">
-        <div style="display:flex; gap:8px; align-items:center;">
-          <button id="genBtn" class="btn">1) Generate Image</button>
+        <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
+          <button id="genBtn" class="btn">1) Generate image</button>
+          <button id="confirmBtn" class="btn" disabled>2) Confirm selection</button>
           <button id="resetBtn" class="btn">Reset</button>
         </div>
         <div id="hud"></div>
-        <div id="stage" class="card" style="margin-top:8px">
-          <canvas id="imgCanvas" width="768" height="512"></canvas>
+
+        <div id="stage">
+          <div id="stageInner">
+            <!-- Logical size fixed at 768x512, CSS scales it -->
+            <canvas id="imgCanvas" width="768" height="512"></canvas>
+          </div>
         </div>
       </div>
 
-      <div class="col card" style="max-width: 320px;">
+      <div class="col card" style="max-width: 360px;">
         <strong>Console</strong>
-        <div id="log" style="margin-top:6px;"></div>
+        <div id="log"></div>
       </div>
     </div>
   </div>
@@ -47,4 +155,3 @@
   <script src="./main.js"></script>
 </body>
 </html>
-
