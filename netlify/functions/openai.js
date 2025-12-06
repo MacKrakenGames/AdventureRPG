@@ -1,8 +1,7 @@
-// netlify/functions/openai.js — API for point & click MVP + choices + backpack + camera navigation
+// netlify/functions/openai.js — API for point & click role-playing MVP
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-// ---- helpers ----
 async function openai(path, body) {
   const res = await fetch(`https://api.openai.com/v1/${path}`, {
     method: "POST",
@@ -36,13 +35,11 @@ function jsonErr(code, msg, http = 500){
   };
 }
 
-// Extract plain text from Responses API safely
 function getOutputText(resp){
   return resp.output_text || resp.output?.[0]?.content?.[0]?.text || "";
 }
 function str(v){ return typeof v === "string" ? v : ""; }
 
-// Robust JSON extraction from model output
 function extractJson(resp) {
   const s = getOutputText(resp) || "";
   try { return JSON.parse(s); } catch {}
@@ -53,7 +50,6 @@ function extractJson(resp) {
   throw new Error("JSON parse failed");
 }
 
-// ---- handler ----
 exports.handler = async (event) => {
   try {
     if (event.httpMethod !== "POST") return jsonErr("S000-METHOD", "Method Not Allowed", 405);
@@ -65,9 +61,9 @@ exports.handler = async (event) => {
 
     const op = body.op;
 
-    // 1) Generate initial image — client error code: E101-GEN; server: S101-GEN
+    // 1) generate initial image
     if (op === "gen_image") {
-      const prompt = str(body.prompt) || "A table with assorted objects, photoreal, studio lighting";
+      const prompt = str(body.prompt) || "A room, photoreal, cinematic lighting";
       try {
         const img = await openai("images/generations", {
           model: "gpt-image-1",
@@ -86,13 +82,13 @@ exports.handler = async (event) => {
       }
     }
 
-    // 2) Identify clicked thing and propose 4 interaction options (story-rich, with carry/stow info)
-    //    Client code: E201-ID; server code: S201-ID
+    // 2) identify clicked thing + options
     if (op === "identify_click") {
       const marked = str(body.marked_image_data_url);
       const x = Number.isFinite(body.x) ? body.x : null;
       const y = Number.isFinite(body.y) ? body.y : null;
       const heldItemLabel = str(body.held_item_label);
+      const priorPrompt = str(body.prior_prompt);
 
       if (!marked || x === null || y === null) {
         return jsonErr("S201-ID", "Missing marked image or coordinates", 400);
@@ -100,19 +96,22 @@ exports.handler = async (event) => {
 
       try {
         const sys =
-          "You are a vision assistant for a point-and-click adventure game.\n" +
+          "You are a vision assistant for a point-and-click role-playing game.\n" +
           "You will see an image with a bright cursor/crosshair. Your tasks:\n" +
           "1) Name the object or region under (or closest to) the cursor with a short but descriptive noun phrase (up to ~12 words).\n" +
           "2) Decide whether this object is reasonably carryable by hand (true/false).\n" +
           "3) Propose 4 distinct ways the player could interact with that thing.\n\n" +
-          "If no held item is provided, options can be general (inspect, push, open, etc.).\n" +
+          "Use the prior scene prompt to decide tone. By default, keep interactions realistic and non-magical.\n" +
+          "ONLY introduce overt magic or supernatural effects if the prior scene prompt clearly establishes a magical or supernatural setting\n" +
+          "(for example, mentions spells, enchantment, wizards, or a magical school). If it does not, stay grounded in everyday physics and social behavior.\n\n" +
+          "If no held item is provided, options can be general (inspect, push, open, speak to someone, hand the object to someone, etc.).\n" +
           "If a held item is provided, options should describe using that item on the target.\n\n" +
           "For carryable objects:\n" +
           "- At most ONE option should explicitly represent stowing/adding the object to the backpack.\n" +
           "- That option should clearly mention the backpack.\n\n" +
           "Each option should be a short, evocative sentence (10–30 words):\n" +
-          "- Start with an imperative verb (e.g., \"Lift the lid to...\")\n" +
-          "- Include a hint about why the player might choose it (risk, curiosity, reward, lore, etc.).\n\n" +
+          "- Start with an imperative verb (e.g., \"Place the necklace around her neck…\").\n" +
+          "- Include a hint about why the player might choose it (comfort, politeness, curiosity, risk, reward, etc.).\n\n" +
           "Respond with STRICT JSON ONLY in this form:\n" +
           "{\n" +
           "  \"label\": \"descriptive noun phrase\",\n" +
@@ -124,6 +123,9 @@ exports.handler = async (event) => {
         const userTextParts = [
           `Canvas size is ${body?.canvas_size?.width || 768}x${body?.canvas_size?.height || 512}. Cursor at (${x},${y}).`,
         ];
+        if (priorPrompt) {
+          userTextParts.push(`Prior scene prompt:\n${priorPrompt}`);
+        }
         if (heldItemLabel) {
           userTextParts.push(
             `The player is holding an item from their backpack: "${heldItemLabel}". ` +
@@ -138,18 +140,9 @@ exports.handler = async (event) => {
             {
               role: "user",
               content: [
-                {
-                  type: "input_text",
-                  text: userTextParts.join("\n")
-                },
-                {
-                  type: "input_text",
-                  text: "Return JSON only; no explanation."
-                },
-                {
-                  type: "input_image",
-                  image_url: marked
-                }
+                { type: "input_text", text: userTextParts.join("\n") },
+                { type: "input_text", text: "Return JSON only; no explanation." },
+                { type: "input_image", image_url: marked }
               ]
             }
           ]
@@ -179,29 +172,33 @@ exports.handler = async (event) => {
       }
     }
 
-    // 3) Generate a follow-up image + narrative based on clicked label + chosen option
-    //    Client: E301-FOLLOW; server: S301-FOLLOW
+    // 3) follow-up image + longer narrative
     if (op === "gen_followup_image") {
       const label = str(body.clicked_label) || "object";
       const action = str(body.interaction_choice) || "";
-      const prior = str(body.prior_prompt) || "A table with assorted objects, photoreal";
+      const prior = str(body.prior_prompt) || "A room";
 
       try {
-        // Prompt + story rewrite using gpt-4o-mini
         const resp = await openai("responses", {
           model: "gpt-4o-mini",
           input: [
             {
               role: "system",
               content:
-                "You are the narrative and visual director for a point-and-click adventure game.\n" +
+                "You are the narrative and visual director for a point-and-click role-playing game.\n" +
                 "Given a prior scene prompt, a clicked object, and a chosen interaction, you must:\n" +
-                "1) Describe the immediate consequence of that choice and the new scene that unfolds (40–80 words).\n" +
-                "2) Produce a concrete image generation prompt for the new scene (<= 60 words).\n\n" +
+                "1) Describe the immediate consequence of that choice and the new scene that unfolds.\n" +
+                "2) Produce a concrete image generation prompt for the new scene.\n\n" +
+                "Use the prior scene prompt to decide tone. By default, keep events and visuals realistic and non-magical.\n" +
+                "ONLY introduce overt magic or supernatural effects if the prior scene prompt clearly establishes a magical or supernatural setting\n" +
+                "(for example, mentions spells, enchanted artifacts, wizards, magical school, etc.). Otherwise, stay grounded in plausible physical and social actions.\n\n" +
+                "The narrative must be 2–3 short paragraphs, together roughly 120–220 words. No bullet points.\n" +
+                "The first paragraph should focus on the immediate outcome of the player’s choice.\n" +
+                "The second (and optional third) paragraph should describe the new scene and how it feels to stand in it as the player.\n\n" +
                 "Respond with STRICT JSON ONLY:\n" +
                 "{\n" +
-                "  \"next_prompt\": \"visual prompt for the new image\",\n" +
-                "  \"story\": \"40-80 word narrative describing the outcome of the choice and the new scene\",\n" +
+                "  \"next_prompt\": \"visual prompt for the new image (<= 60 words)\",\n" +
+                "  \"story\": \"2–3 short paragraphs, 120–220 words in total, describing the outcome of the choice and the new scene\",\n" +
                 "  \"clicked_label_for_sprite\": \"short name for the item, if an object was taken\" (or null/false)\n" +
                 "}\n"
             },
@@ -211,7 +208,7 @@ exports.handler = async (event) => {
                 `Prior scene prompt:\n${prior}\n\n` +
                 `The player clicked on: ${label}\n` +
                 (action ? `They chose to: ${action}\n` : "") +
-                "Describe what happens as a result and what the player now sees. Then provide the new image prompt and optional clicked_label_for_sprite in JSON as requested."
+                "Describe what happens as a result and what the player now sees, then provide the new image prompt and optional clicked_label_for_sprite in JSON."
             }
           ]
         });
@@ -226,9 +223,8 @@ exports.handler = async (event) => {
           (prior + ` Focus on the ${label} and the player action: ${action || "interact"}.`);
         const story =
           story_raw ||
-          `You act on the ${label}, and the room shifts subtly around you. The consequences of that choice settle into a new scene.`;
+          "You follow through on your decision, and the scene shifts around you. The consequences settle into place as you take in your new surroundings.";
 
-        // Follow-up image at valid size + medium quality
         const img = await openai("images/generations", {
           model: "gpt-image-1",
           prompt: next_prompt,
@@ -247,8 +243,7 @@ exports.handler = async (event) => {
       }
     }
 
-    // 4) Generate a small sprite for a carryable item (transparent background)
-    //    Used after a stow/backpack action
+    // 4) sprite for backpack items
     if (op === "make_item_sprite") {
       const itemLabel = str(body.item_label) || "object";
       try {
@@ -275,8 +270,7 @@ exports.handler = async (event) => {
       }
     }
 
-    // 5) Change view (look left/right/up/down, zoom out)
-    //    Client: E501-VIEW; server: S501-VIEW
+    // 5) change viewpoint (look left/right/up/down/zoom out) + longer story
     if (op === "change_view") {
       const direction = str(body.direction) || "left";
       const prior = str(body.prior_prompt) || "A room";
@@ -287,15 +281,18 @@ exports.handler = async (event) => {
             {
               role: "system",
               content:
-                "You are a visual director for a point-and-click adventure game.\n" +
+                "You are a visual director for a point-and-click role-playing game.\n" +
                 "Given a prior scene prompt and a view direction, you must:\n" +
-                "1) Describe how the camera shifts (left/right/up/down/zoom out) while staying in the same location or immediate area (40–80 words).\n" +
-                "2) Produce a concrete image generation prompt for the new viewpoint (<= 60 words).\n\n" +
-                "Keep continuity of setting, lighting, and general mood. Do not teleport to a completely different place.\n" +
+                "1) Describe how the camera shifts (left/right/up/down/zoom out) while staying in the same location or immediate area.\n" +
+                "2) Produce a concrete image generation prompt for the new viewpoint.\n\n" +
+                "Use the prior scene prompt to decide tone. By default, keep events and visuals realistic and non-magical.\n" +
+                "ONLY introduce overt magic or supernatural effects if the prior scene prompt clearly establishes a magical or supernatural setting.\n\n" +
+                "The narrative must be 2–3 short paragraphs, together roughly 120–220 words. No bullet points.\n" +
+                "Focus on how it feels as the player slowly turns their gaze or pulls back, noticing new details.\n\n" +
                 "Respond with STRICT JSON ONLY:\n" +
                 "{\n" +
-                "  \"next_prompt\": \"visual prompt for the new image from this viewpoint\",\n" +
-                "  \"story\": \"40-80 word narrative about how the view shifts and what is now seen\"\n" +
+                "  \"next_prompt\": \"visual prompt for the new image from this viewpoint (<= 60 words)\",\n" +
+                "  \"story\": \"2–3 short paragraphs, 120–220 words, about how the view shifts and what is now seen\"\n" +
                 "}\n"
             },
             {
@@ -317,7 +314,7 @@ exports.handler = async (event) => {
           (prior + ` View shifted ${direction}, showing more of the surrounding area.`);
         const story =
           story_raw ||
-          `You shift your gaze ${direction}, taking in a broader view of the same space and noticing new details that were previously out of frame.`;
+          "You shift your gaze and the frame of the scene widens, revealing details that were previously hidden just outside your focus.";
 
         const img = await openai("images/generations", {
           model: "gpt-image-1",
