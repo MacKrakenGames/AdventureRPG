@@ -1,4 +1,4 @@
-/* main.js — Point & Click MVP with role-playing, backpack, and camera navigation */
+/* main.js — Point & Click MVP with role-playing, backpack, camera navigation, and world continuity */
 
 const els = {
   genBtn: document.getElementById("genBtn"),
@@ -22,16 +22,16 @@ const ctx = els.canvas.getContext("2d");
 // Logical pixel coordinate system (canvas)
 const W = 768, H = 512;
 
-// Scene templates
+// Scene templates (these define the world theme/style)
 const SCENE_PROMPTS = {
   magical_school:
     "An enchanted boarding school corridor at night, floating candles, portraits whispering, arched stone windows, warm torchlight, cinematic, richly detailed, fantasy illustration.",
   university:
-    "A modern university campus quad at dusk, students walking with backpacks, old brick buildings and trees, soft golden hour light, cinematic wide shot, realistic.",
+    "A modern university campus quad at dusk, students walking with backpacks, old brick buildings and trees, soft golden hour light, cinematic wide shot, realistic, subtle film grain.",
   western:
-    "A dusty main street of a western frontier town at high noon, wooden saloon, hitching posts, horses, sun-bleached signs, mountains in the distance, cinematic western film frame.",
+    "A dusty main street of an 1880s western frontier town at high noon, wooden saloon, hitching posts, horses, sun-bleached signs, mountains in the distance, cinematic western film frame, warm earthy color palette, shallow depth of field.",
   private_eye:
-    "A cramped 1940s private investigator's office at night, venetian blinds casting shadows, desk lamp, cluttered desk with files, city lights through the window, cinematic noir, moody lighting."
+    "A cramped 1940s private investigator's office at night, venetian blinds casting shadows, desk lamp, cluttered desk with files, city lights through the window, cinematic noir, moody lighting, muted colors, film noir style."
 };
 
 // Backpack state
@@ -43,6 +43,7 @@ let activeSlotIndex = 0;
 // Game state
 let current = {
   prompt: SCENE_PROMPTS.magical_school,
+  worldTag: "magical_school", // tracks overall world/genre
   imageUrl: "",
   clicked: null,
   labeled: "",
@@ -155,6 +156,7 @@ function setViewButtonsDisabled(disabled) {
 async function generateImage() {
   try {
     const key = els.sceneSelect.value || "magical_school";
+    current.worldTag = key;
     current.prompt = SCENE_PROMPTS[key] || SCENE_PROMPTS.magical_school;
 
     setStatus("Generating scene…");
@@ -345,7 +347,8 @@ async function onConfirmSelection() {
       x, y,
       canvas_size: { width: W, height: H },
       held_item_label: heldItemLabel,
-      prior_prompt: current.prompt
+      prior_prompt: current.prompt,
+      world_tag: current.worldTag
     }).catch(e => { throw new Error("E201-ID: " + String(e)); });
 
     if (!idResp.label) throw new Error("E201-ID: No label from vision");
@@ -412,7 +415,8 @@ async function onChooseOption(index) {
       op: "gen_followup_image",
       clicked_label: current.labeled,
       interaction_choice: optionText,
-      prior_prompt: current.prompt
+      prior_prompt: current.prompt,
+      world_tag: current.worldTag
     }).catch(e => { throw new Error("E301-FOLLOW: " + String(e)); });
 
     if (!follow.image_url) throw new Error("E301-FOLLOW: Missing image_url");
@@ -490,7 +494,8 @@ async function onChangeView(direction) {
     const resp = await postJSON("/.netlify/functions/openai", {
       op: "change_view",
       direction,
-      prior_prompt: current.prompt
+      prior_prompt: current.prompt,
+      world_tag: current.worldTag
     }).catch(e => { throw new Error("E501-VIEW: " + String(e)); });
 
     if (!resp.image_url) throw new Error("E501-VIEW: Missing image_url");
@@ -552,6 +557,7 @@ els.confirmBtn.onclick = onConfirmSelection;
 els.resetBtn.onclick = () => {
   current = {
     prompt: current.prompt,
+    worldTag: current.worldTag,
     imageUrl: "",
     clicked: null,
     labeled: "",
