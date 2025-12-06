@@ -1,4 +1,4 @@
-// netlify/functions/openai.js — API for point & click MVP + interaction choices
+// netlify/functions/openai.js — API for point & click MVP + choices + backpack
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
@@ -42,7 +42,7 @@ function getOutputText(resp){
 }
 function str(v){ return typeof v === "string" ? v : ""; }
 
-// Extract JSON from model output robustly
+// Robust JSON extraction from model output
 function extractJson(resp) {
   const s = getOutputText(resp) || "";
   try { return JSON.parse(s); } catch {}
@@ -53,7 +53,7 @@ function extractJson(resp) {
   throw new Error("JSON parse failed");
 }
 
-// ---- handlers ----
+// ---- handler ----
 exports.handler = async (event) => {
   try {
     if (event.httpMethod !== "POST") return jsonErr("S000-METHOD", "Method Not Allowed", 405);
@@ -74,7 +74,7 @@ exports.handler = async (event) => {
           prompt,
           n: 1,
           size: "1024x1024",
-          quality: "medium"   // <--- medium quality
+          quality: "medium"
         });
 
         const b64 = img.data?.[0]?.b64_json;
@@ -86,12 +86,13 @@ exports.handler = async (event) => {
       }
     }
 
-    // 2) Identify clicked thing and propose 4 interaction options
+    // 2) Identify clicked thing and propose 4 interaction options (story-rich, with carry/stow info)
     //    Client code: E201-ID; server code: S201-ID
     if (op === "identify_click") {
       const marked = str(body.marked_image_data_url);
       const x = Number.isFinite(body.x) ? body.x : null;
       const y = Number.isFinite(body.y) ? body.y : null;
+      const heldItemLabel = str(body.held_item_label);
 
       if (!marked || x === null || y === null) {
         return jsonErr("S201-ID", "Missing marked image or coordinates", 400);
@@ -99,14 +100,36 @@ exports.handler = async (event) => {
 
       try {
         const sys =
-          "You are a precise vision assistant for a point-and-click adventure game.\n" +
+          "You are a vision assistant for a point-and-click adventure game.\n" +
           "You will see an image with a bright cursor/crosshair. Your tasks:\n" +
-          "1) Name the object or region under (or closest to) the cursor with a short noun phrase (<= 3 words).\n" +
-          "2) Propose 4 distinct ways the player could interact with that thing.\n\n" +
+          "1) Name the object or region under (or closest to) the cursor with a short but descriptive noun phrase (up to ~12 words).\n" +
+          "2) Decide whether this object is reasonably carryable by hand (true/false).\n" +
+          "3) Propose 4 distinct ways the player could interact with that thing.\n\n" +
+          "If no held item is provided, options can be general (inspect, push, open, etc.).\n" +
+          "If a held item is provided, options should describe using that item on the target.\n\n" +
+          "For carryable objects:\n" +
+          "- At most ONE option should explicitly represent stowing/adding the object to the backpack.\n" +
+          "- That option should clearly mention the backpack.\n\n" +
+          "Each option should be a short, evocative sentence (10–30 words):\n" +
+          "- Start with an imperative verb (e.g., \"Lift the lid to...\")\n" +
+          "- Include a hint about why the player might choose it (risk, curiosity, reward, lore, etc.).\n\n" +
           "Respond with STRICT JSON ONLY in this form:\n" +
-          "{ \"label\": \"short noun phrase\",\n" +
-          "  \"options\": [\"option 1\", \"option 2\", \"option 3\", \"option 4\"] }\n" +
-          "Each option should be a short imperative phrase (e.g., \"Pick up the key\").";
+          "{\n" +
+          "  \"label\": \"descriptive noun phrase\",\n" +
+          "  \"carryable\": true or false,\n" +
+          "  \"stow_option_index\": number or null,\n" +
+          "  \"options\": [\"option 1\", \"option 2\", \"option 3\", \"option 4\"]\n" +
+          "}";
+
+        const userTextParts = [
+          `Canvas size is ${body?.canvas_size?.width || 768}x${body?.canvas_size?.height || 512}. Cursor at (${x},${y}).`,
+        ];
+        if (heldItemLabel) {
+          userTextParts.push(
+            `The player is holding an item from their backpack: "${heldItemLabel}". ` +
+            "Treat the interaction as using this item on the target."
+          );
+        }
 
         const resp = await openai("responses", {
           model: "gpt-4o",
@@ -117,9 +140,7 @@ exports.handler = async (event) => {
               content: [
                 {
                   type: "input_text",
-                  text:
-                    `Canvas size is ${body?.canvas_size?.width || 768}x${body?.canvas_size?.height || 512}. ` +
-                    `Cursor at (${x},${y}).`
+                  text: userTextParts.join("\n")
                 },
                 {
                   type: "input_text",
@@ -139,17 +160,26 @@ exports.handler = async (event) => {
         const options = Array.isArray(parsed.options)
           ? parsed.options.slice(0, 4).map(o => str(o).trim()).filter(Boolean)
           : [];
+        const carryable = Boolean(parsed.carryable);
+        let stow_option_index = parsed.stow_option_index;
+        if (
+          typeof stow_option_index !== "number" ||
+          stow_option_index < 0 ||
+          stow_option_index >= options.length
+        ) {
+          stow_option_index = null;
+        }
 
         if (!label) return jsonErr("S201-ID", "Missing label from model");
         if (options.length !== 4) return jsonErr("S201-ID", "Expected 4 options from model");
 
-        return json200({ label, options });
+        return json200({ label, options, carryable, stow_option_index });
       } catch (e) {
         return jsonErr("S201-ID", e.message || String(e));
       }
     }
 
-    // 3) Generate a follow-up image based on the clicked label + chosen option
+    // 3) Generate a follow-up image + narrative based on clicked label + chosen option
     //    Client: E301-FOLLOW; server: S301-FOLLOW
     if (op === "gen_followup_image") {
       const label = str(body.clicked_label) || "object";
@@ -157,18 +187,23 @@ exports.handler = async (event) => {
       const prior = str(body.prior_prompt) || "A table with assorted objects, photoreal";
 
       try {
-        // Prompt rewrite using gpt-4o-mini
-        const comp = await openai("responses", {
+        // Prompt + story rewrite using gpt-4o-mini
+        const resp = await openai("responses", {
           model: "gpt-4o-mini",
           input: [
             {
               role: "system",
               content:
-                "You write concise, concrete image prompts for a visual adventure game.\n" +
-                "- Return ONLY the prompt text, nothing else.\n" +
-                "- Keep it under 60 words.\n" +
-                "- Avoid camera jargon; describe content and composition.\n" +
-                "- Make the new scene clearly related to the prior scene and focused on the clicked object and chosen action."
+                "You are the narrative and visual director for a point-and-click adventure game.\n" +
+                "Given a prior scene prompt, a clicked object, and a chosen interaction, you must:\n" +
+                "1) Describe the immediate consequence of that choice and the new scene that unfolds (40–80 words).\n" +
+                "2) Produce a concrete image generation prompt for the new scene (<= 60 words).\n\n" +
+                "Respond with STRICT JSON ONLY:\n" +
+                "{\n" +
+                "  \"next_prompt\": \"visual prompt for the new image\",\n" +
+                "  \"story\": \"40-80 word narrative describing the outcome of the choice and the new scene\",\n" +
+                "  \"clicked_label_for_sprite\": \"short name for the item, if an object was taken\", (or null/false)\n" +
+                "}\n"
             },
             {
               role: "user",
@@ -176,15 +211,22 @@ exports.handler = async (event) => {
                 `Prior scene prompt:\n${prior}\n\n` +
                 `The player clicked on: ${label}\n` +
                 (action ? `They chose to: ${action}\n` : "") +
-                "Write a new prompt that visually shows the consequence of this interaction."
+                "Describe what happens as a result and what the player now sees. Then provide the new image prompt and optional clicked_label_for_sprite in JSON as requested."
             }
           ]
         });
 
-        const next_prompt_raw = getOutputText(comp).trim();
+        const parsed = extractJson(resp);
+        const next_prompt_raw = str(parsed.next_prompt).trim();
+        const story_raw = str(parsed.story).trim();
+        const clicked_label_for_sprite = parsed.clicked_label_for_sprite;
+
         const next_prompt =
           next_prompt_raw ||
           (prior + ` Focus on the ${label} and the player action: ${action || "interact"}.`);
+        const story =
+          story_raw ||
+          `You act on the ${label}, and the room shifts subtly around you. The consequences of that choice settle into a new scene.`;
 
         // Follow-up image at valid size + medium quality
         const img = await openai("images/generations", {
@@ -199,9 +241,37 @@ exports.handler = async (event) => {
         if (!b64) return jsonErr("S301-FOLLOW", "No b64_json from follow-up generation");
         const image_url = `data:image/png;base64,${b64}`;
 
-        return json200({ image_url, next_prompt });
+        return json200({ image_url, next_prompt, story, clicked_label_for_sprite });
       } catch (e) {
         return jsonErr("S301-FOLLOW", e.message || String(e));
+      }
+    }
+
+    // 4) Generate a small sprite for a carryable item (transparent background)
+    //    Used after a stow/backpack action
+    if (op === "make_item_sprite") {
+      const itemLabel = str(body.item_label) || "object";
+      try {
+        const prompt =
+          `A small clear icon of ${itemLabel}, simple flat illustration, neutral lighting, centered, ` +
+          "no extra objects, clean outline, suitable as an inventory icon, transparent background.";
+
+        const img = await openai("images/generations", {
+          model: "gpt-image-1",
+          prompt,
+          n: 1,
+          size: "1024x1024",
+          quality: "low",
+          background: "transparent",
+          output_format: "png"
+        });
+
+        const b64 = img.data?.[0]?.b64_json;
+        if (!b64) return jsonErr("S401-SPRITE", "No b64_json from sprite generation");
+        const image_url = `data:image/png;base64,${b64}`;
+        return json200({ image_url });
+      } catch (e) {
+        return jsonErr("S401-SPRITE", e.message || String(e));
       }
     }
 
