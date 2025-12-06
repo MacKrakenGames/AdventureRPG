@@ -1,4 +1,4 @@
-// netlify/functions/openai.js — API for point & click MVP + choices + backpack
+// netlify/functions/openai.js — API for point & click MVP + choices + backpack + camera navigation
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
@@ -202,7 +202,7 @@ exports.handler = async (event) => {
                 "{\n" +
                 "  \"next_prompt\": \"visual prompt for the new image\",\n" +
                 "  \"story\": \"40-80 word narrative describing the outcome of the choice and the new scene\",\n" +
-                "  \"clicked_label_for_sprite\": \"short name for the item, if an object was taken\", (or null/false)\n" +
+                "  \"clicked_label_for_sprite\": \"short name for the item, if an object was taken\" (or null/false)\n" +
                 "}\n"
             },
             {
@@ -272,6 +272,68 @@ exports.handler = async (event) => {
         return json200({ image_url });
       } catch (e) {
         return jsonErr("S401-SPRITE", e.message || String(e));
+      }
+    }
+
+    // 5) Change view (look left/right/up/down, zoom out)
+    //    Client: E501-VIEW; server: S501-VIEW
+    if (op === "change_view") {
+      const direction = str(body.direction) || "left";
+      const prior = str(body.prior_prompt) || "A room";
+      try {
+        const resp = await openai("responses", {
+          model: "gpt-4o-mini",
+          input: [
+            {
+              role: "system",
+              content:
+                "You are a visual director for a point-and-click adventure game.\n" +
+                "Given a prior scene prompt and a view direction, you must:\n" +
+                "1) Describe how the camera shifts (left/right/up/down/zoom out) while staying in the same location or immediate area (40–80 words).\n" +
+                "2) Produce a concrete image generation prompt for the new viewpoint (<= 60 words).\n\n" +
+                "Keep continuity of setting, lighting, and general mood. Do not teleport to a completely different place.\n" +
+                "Respond with STRICT JSON ONLY:\n" +
+                "{\n" +
+                "  \"next_prompt\": \"visual prompt for the new image from this viewpoint\",\n" +
+                "  \"story\": \"40-80 word narrative about how the view shifts and what is now seen\"\n" +
+                "}\n"
+            },
+            {
+              role: "user",
+              content:
+                `Prior scene prompt:\n${prior}\n\n` +
+                `The player chooses to look: ${direction}.\n` +
+                "Describe the new view and what is visible, then provide the image prompt in JSON."
+            }
+          ]
+        });
+
+        const parsed = extractJson(resp);
+        const next_prompt_raw = str(parsed.next_prompt).trim();
+        const story_raw = str(parsed.story).trim();
+
+        const next_prompt =
+          next_prompt_raw ||
+          (prior + ` View shifted ${direction}, showing more of the surrounding area.`);
+        const story =
+          story_raw ||
+          `You shift your gaze ${direction}, taking in a broader view of the same space and noticing new details that were previously out of frame.`;
+
+        const img = await openai("images/generations", {
+          model: "gpt-image-1",
+          prompt: next_prompt,
+          n: 1,
+          size: "1024x1024",
+          quality: "medium"
+        });
+
+        const b64 = img.data?.[0]?.b64_json;
+        if (!b64) return jsonErr("S501-VIEW", "No b64_json from view-change generation");
+        const image_url = `data:image/png;base64,${b64}`;
+
+        return json200({ image_url, next_prompt, story });
+      } catch (e) {
+        return jsonErr("S501-VIEW", e.message || String(e));
       }
     }
 
