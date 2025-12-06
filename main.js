@@ -1,4 +1,4 @@
-/* main.js — Point & Click MVP with explicit "Confirm selection" step */
+/* main.js — Point & Click MVP with text interaction choices */
 
 const els = {
   genBtn: document.getElementById("genBtn"),
@@ -8,6 +8,7 @@ const els = {
   log: document.getElementById("log"),
   canvas: document.getElementById("imgCanvas"),
   hud: document.getElementById("hud"),
+  choices: document.getElementById("choices"),
 };
 const ctx = els.canvas.getContext("2d");
 
@@ -19,6 +20,7 @@ let current = {
   imageUrl: "",
   clicked: null, // {x,y}
   labeled: "",   // what the model said we clicked
+  options: [],   // interaction options for the clicked object
 };
 
 function setStatus(s){ els.status.textContent = s; }
@@ -26,7 +28,11 @@ function log(msg){
   els.log.textContent += msg + "\n";
   els.log.scrollTop = els.log.scrollHeight;
 }
-function clearLog(){ els.log.textContent = ""; els.hud.textContent = ""; }
+function clearLog(){
+  els.log.textContent = "";
+  els.hud.textContent = "";
+  renderChoices();
+}
 
 // Simple JSON POST helper with content-type guard
 async function postJSON(url, body) {
@@ -56,6 +62,7 @@ async function generateImage() {
     els.confirmBtn.disabled = true;
     current.clicked = null;
     current.labeled = "";
+    current.options = [];
     ctx.clearRect(0,0,W,H);
     clearLog();
 
@@ -122,27 +129,30 @@ async function drawImageToCanvas(url) {
 
 /* ---------------- STEP 3: User click → record pixel coords ----------------
    Client error code: E121-CLICK */
-function onCanvasClick(evt) {
+async function onCanvasClick(evt) {
   if (!current.imageUrl) {
     log("E121-CLICK: Click ignored; no image yet");
     return;
   }
 
-  // Map visible click position back to 768x512 canvas coords
   const rect = els.canvas.getBoundingClientRect();
   const x = Math.floor((evt.clientX - rect.left) * (W / rect.width));
   const y = Math.floor((evt.clientY - rect.top) * (H / rect.height));
   current.clicked = { x, y };
+  current.options = []; // clear old options when new spot is chosen
+  renderChoices();
 
   log(`Selection: (${x}, ${y})`);
   setStatus(`Selection at (${x}, ${y}) – click "2) Confirm selection"`);
-  els.hud.textContent = `Selected point: (${x}, ${y})\nTap Confirm when ready.`;
+
+  els.hud.textContent =
+    `Selected point: (${x}, ${y})\nTap Confirm when ready.`;
 
   try {
-    // For simplicity, we just draw a new cursor on top.
-    drawCursor(x, y);
+    els.confirmBtn.disabled = true; // avoid double confirm while redrawing
+    await redrawImageWithCursor(x, y); // redraw base + single cursor
     els.confirmBtn.disabled = false;
-  } catch(e) {
+  } catch (e) {
     log("E131-CURSOR: " + String(e));
     els.confirmBtn.disabled = true;
   }
@@ -179,10 +189,16 @@ function drawCursor(x, y) {
   ctx.restore();
 }
 
-/* ---------------- STEP 5+6: Confirm selection → identify + generate follow-up ----------------
+// helper: redraw base image, then draw a single cursor
+async function redrawImageWithCursor(x, y) {
+  if (!current.imageUrl) return;
+  await drawImageToCanvas(current.imageUrl);
+  drawCursor(x, y);
+}
+
+/* ---------------- STEP 5: Confirm selection → identify object + get options ----------------
    Client error codes:
-     - E201-ID     (identify step)
-     - E301-FOLLOW (follow-up image step) */
+     - E201-ID (identify + options) */
 async function onConfirmSelection() {
   if (!current.imageUrl) {
     log("E201-ID: No image loaded – generate one first");
@@ -194,7 +210,7 @@ async function onConfirmSelection() {
   }
 
   try {
-    setStatus("Creating new scene from selection…");
+    setStatus("Analyzing selection…");
     els.confirmBtn.disabled = true;
     els.genBtn.disabled = true;
 
@@ -208,7 +224,6 @@ async function onConfirmSelection() {
 
     const { x, y } = current.clicked;
 
-    // ---- Step 5: identify what was clicked (vision) ----
     const idResp = await postJSON("/.netlify/functions/openai", {
       op: "identify_click",
       original_url: current.imageUrl,
@@ -218,13 +233,45 @@ async function onConfirmSelection() {
     }).catch(e => { throw new Error("E201-ID: " + String(e)); });
 
     if (!idResp.label) throw new Error("E201-ID: No label from vision");
-    current.labeled = idResp.label;
-    log(`Identified selection as: "${current.labeled}"`);
+    if (!Array.isArray(idResp.options) || idResp.options.length === 0) {
+      throw new Error("E201-ID: No options returned");
+    }
 
-    // ---- Step 6: generate follow-up image based on that label ----
+    current.labeled = idResp.label;
+    current.options = idResp.options;
+    log(`Identified selection as: "${current.labeled}"`);
+    log("Options:\n - " + current.options.join("\n - "));
+
+    renderChoices();
+
+    setStatus(`Choose how to interact with the ${current.labeled}.`);
+  } catch (e) {
+    setStatus("Error");
+    log(String(e));
+  } finally {
+    els.genBtn.disabled = false;
+    // confirm remains disabled until next selection
+  }
+}
+
+/* ---------------- STEP 6: User chooses an interaction option → generate next image ----------------
+   Client error code:
+     - E301-FOLLOW (follow-up image step) */
+async function onChooseOption(optionText) {
+  if (!current.labeled) {
+    log("E301-FOLLOW: No labeled selection yet");
+    return;
+  }
+  try {
+    setStatus("Creating new scene from selection…");
+    els.genBtn.disabled = true;
+    els.confirmBtn.disabled = true;
+    disableChoiceButtons(true);
+
     const follow = await postJSON("/.netlify/functions/openai", {
       op: "gen_followup_image",
       clicked_label: current.labeled,
+      interaction_choice: optionText,
       prior_prompt: current.prompt
     }).catch(e => { throw new Error("E301-FOLLOW: " + String(e)); });
 
@@ -233,11 +280,14 @@ async function onConfirmSelection() {
     current.imageUrl = follow.image_url;
     current.prompt = follow.next_prompt || current.prompt;
     current.clicked = null;
+    current.labeled = "";
+    current.options = [];
 
-    log(`New scene created from selection "${current.labeled}".`);
+    log(`New scene created from "${optionText}" on "${current.prompt.slice(0,40)}..."`);
+
+    renderChoices();
     els.hud.textContent =
-      `New image based on: ${current.labeled}\n` +
-      `Tap to select another point, then Confirm selection.`;
+      `New image generated from choice:\n"${optionText}".\nTap to select another point, then Confirm selection.`;
 
     await drawImageToCanvas(current.imageUrl);
     setStatus("New image ready – tap to select, then confirm");
@@ -245,9 +295,32 @@ async function onConfirmSelection() {
     setStatus("Error");
     log(String(e));
   } finally {
-    els.genBtn.disabled = false; // can always regenerate from scratch
-    // confirm remains disabled until the next click
+    els.genBtn.disabled = false;
+    // Confirm will be re-enabled on next click
   }
+}
+
+function disableChoiceButtons(disabled) {
+  const buttons = els.choices.querySelectorAll("button");
+  buttons.forEach(b => b.disabled = disabled);
+}
+
+/* ---------------- UI: render choices ---------------- */
+function renderChoices() {
+  els.choices.innerHTML = "";
+  if (!current.options || current.options.length === 0) return;
+
+  const labelEl = document.createElement("div");
+  labelEl.textContent = `How do you interact with the ${current.labeled || "selection"}?`;
+  els.choices.appendChild(labelEl);
+
+  current.options.forEach(opt => {
+    const b = document.createElement("button");
+    b.className = "btn";
+    b.textContent = opt;
+    b.onclick = () => onChooseOption(opt);
+    els.choices.appendChild(b);
+  });
 }
 
 /* ---------------- Wiring ---------------- */
@@ -259,7 +332,8 @@ els.resetBtn.onclick = () => {
     prompt: current.prompt,
     imageUrl: "",
     clicked: null,
-    labeled: ""
+    labeled: "",
+    options: []
   };
   ctx.clearRect(0,0,W,H);
   clearLog();
