@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en">
-head>
+<head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>Point & Click MVP</title>
@@ -177,10 +177,34 @@ head>
     <div class="row">
       <!-- Left: scene & choices -->
       <div class="col card">
+        <!-- Scene selector -->
+        <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:6px;">
+          <label style="font-size:0.8rem;">
+            Start scene:
+            <select id="sceneSelect" style="background:#020617;color:#e5e7eb;border-radius:6px;border:1px solid #1f2937;padding:2px 6px;font-size:0.8rem;">
+              <option value="magical_school">Magical school</option>
+              <option value="university">University campus</option>
+              <option value="western">Western frontier town</option>
+              <option value="private_eye">1940s private investigator</option>
+            </select>
+          </label>
+        </div>
+
+        <!-- Main controls -->
         <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
           <button id="genBtn" class="btn">1) Generate image</button>
           <button id="confirmBtn" class="btn" disabled>2) Confirm selection</button>
           <button id="resetBtn" class="btn">Reset</button>
+        </div>
+
+        <!-- View/navigation controls -->
+        <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-top:6px; font-size:0.8rem;">
+          <span>Look:</span>
+          <button id="viewLeftBtn" class="btn">⬅ Left</button>
+          <button id="viewRightBtn" class="btn">Right ➡</button>
+          <button id="viewUpBtn" class="btn">⬆ Up</button>
+          <button id="viewDownBtn" class="btn">Down ⬇</button>
+          <button id="viewZoomOutBtn" class="btn">🔍 Zoom out</button>
         </div>
 
         <div id="hud"></div>
