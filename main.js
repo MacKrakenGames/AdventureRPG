@@ -1,5 +1,5 @@
 /* main.js — Point & Click role-playing MVP
-   Hyper-real camera style + backpack + camera navigation + NPC character sheets */
+   Hyper-real camera style + world retention + player character + NPC sheets */
 
 const els = {
   genBtn: document.getElementById("genBtn"),
@@ -17,13 +17,29 @@ const els = {
   viewUpBtn: document.getElementById("viewUpBtn"),
   viewDownBtn: document.getElementById("viewDownBtn"),
   viewZoomOutBtn: document.getElementById("viewZoomOutBtn"),
+
+  // player character UI
+  charAge: document.getElementById("charAge"),
+  charSex: document.getElementById("charSex"),
+  charWeight: document.getElementById("charWeight"),
+  charChest: document.getElementById("charChest"),
+  charHips: document.getElementById("charHips"),
+  charHairStyle: document.getElementById("charHairStyle"),
+  charHairColor: document.getElementById("charHairColor"),
+  charEyes: document.getElementById("charEyes"),
+  charProfession: document.getElementById("charProfession"),
+  charGenBtn: document.getElementById("charGenBtn"),
+  charRandomBtn: document.getElementById("charRandomBtn"),
+  charAcceptBtn: document.getElementById("charAcceptBtn"),
+  playerPortrait: document.getElementById("playerPortrait"),
+  playerHint: document.getElementById("playerHint"),
 };
 const ctx = els.canvas.getContext("2d");
 
 // Logical pixel coordinate system (canvas)
 const W = 768, H = 512;
 
-// ---- Scene templates (each is hyper-real, camera-quality) ----
+// ---- common style & world descriptions ----
 const BASE_STYLE =
   "hyper-realistic photograph, 50mm lens, shallow depth of field, high dynamic range, natural cinematic lighting, camera-quality image, not a painting, not a drawing, not an illustration.";
 
@@ -42,6 +58,17 @@ const SCENE_PROMPTS = {
     BASE_STYLE,
 };
 
+const WORLD_DESCRIPTIONS = {
+  magical_school:
+    "This world is a grounded magical boarding school: stone corridors, candles, robes, enchanted objects, and old-fashioned materials. Technology is minimal and mostly pre-digital. Magic is allowed, but visuals remain realistic and photographic.",
+  university:
+    "This world is a present-day university campus: modern casual clothing, laptops, smartphones, contemporary backpacks and bikes, small cars, realistic architecture. No futuristic devices or historical costumes.",
+  western:
+    "This world is an 1880s American frontier town in the Old West: wooden buildings, horses, revolvers, telegraph wires, steam trains and wagons. No modern cars, smartphones, plastic signage, or contemporary fashion.",
+  private_eye:
+    "This world is a 1940s American city in a noir detective story: trench coats, fedoras, cigarette smoke, rotary phones, typewriters, neon signs, and 1930s–1940s cars. No mobile phones, computers, or post-1960s technology.",
+};
+
 // ---- Backpack state ----
 const BACKPACK_SLOTS = 32;
 let backpack = new Array(BACKPACK_SLOTS).fill(null);
@@ -51,6 +78,10 @@ let activeSlotIndex = 0;
 // ---- NPC registry (experimental character sheets) ----
 // npcMap: { [name: string]: { name, summary } }
 let npcMap = {};
+
+// ---- Player character state ----
+let playerCharacter = null; // { age_range, sex, weight_range, chest_size, hip_size, hair_style, hair_color, eye_color, profession }
+let playerReady = false;
 
 // ---- Game state ----
 let current = {
@@ -173,11 +204,9 @@ function upsertNpc(name, summary) {
   if (!npcMap[trimmedName]) {
     npcMap[trimmedName] = { name: trimmedName, summary: trimmedSummary };
   } else if (trimmedSummary && trimmedSummary.length > npcMap[trimmedName].summary.length) {
-    // Prefer the longer, presumably richer description
     npcMap[trimmedName].summary = trimmedSummary;
   }
 
-  // Cap at 4 NPCs: drop the oldest key if we exceed
   const names = Object.keys(npcMap);
   if (names.length > 4) {
     delete npcMap[names[0]];
@@ -188,9 +217,104 @@ function getNpcArray() {
   return Object.values(npcMap);
 }
 
+/* ---------------- Player character helpers ---------------- */
+
+function getPlayerCharacterFromUI() {
+  return {
+    age_range: els.charAge.value,
+    sex: els.charSex.value,
+    weight_range: els.charWeight.value,
+    chest_size: els.charChest.value,
+    hip_size: els.charHips.value,
+    hair_style: els.charHairStyle.value,
+    hair_color: els.charHairColor.value,
+    eye_color: els.charEyes.value,
+    profession: els.charProfession.value,
+  };
+}
+
+function randomOption(selectEl) {
+  const n = selectEl.options.length;
+  const idx = Math.floor(Math.random() * n);
+  selectEl.selectedIndex = idx;
+}
+
+function randomizePlayerCharacterUI() {
+  randomOption(els.charAge);
+  randomOption(els.charSex);
+  randomOption(els.charWeight);
+  randomOption(els.charChest);
+  randomOption(els.charHips);
+  randomOption(els.charHairStyle);
+  randomOption(els.charHairColor);
+  randomOption(els.charEyes);
+  randomOption(els.charProfession);
+}
+
+/* ---- Generate player portrait ---- */
+
+async function generatePlayerPortrait(isRandom) {
+  try {
+    if (isRandom) {
+      randomizePlayerCharacterUI();
+    }
+    const worldTag = els.sceneSelect.value || "magical_school";
+    const sheet = getPlayerCharacterFromUI();
+
+    setStatus("Generating player portrait…");
+    els.charGenBtn.disabled = true;
+    els.charRandomBtn.disabled = true;
+    els.charAcceptBtn.disabled = true;
+
+    const resp = await postJSON("/.netlify/functions/openai", {
+      op: "gen_player_portrait",
+      world_tag: worldTag,
+      player_character: sheet,
+    });
+
+    if (!resp.image_url) {
+      throw new Error("E601-CHAR: Missing image_url for portrait");
+    }
+
+    playerCharacter = sheet;
+    playerReady = false; // must explicitly accept
+    els.playerPortrait.src = resp.image_url;
+    els.playerHint.textContent =
+      "Portrait generated. If you like this character, click “Use this character”. Otherwise, tweak options or randomize again.";
+    els.charAcceptBtn.disabled = false;
+
+    setStatus("Portrait ready. Accept to enter the world.");
+  } catch (e) {
+    log(String(e));
+    setStatus("Error while generating portrait.");
+  } finally {
+    els.charGenBtn.disabled = false;
+    els.charRandomBtn.disabled = false;
+  }
+}
+
+function acceptPlayerCharacter() {
+  if (!playerCharacter || !els.playerPortrait.src) {
+    setStatus("Generate a portrait first.");
+    return;
+  }
+  playerReady = true;
+  els.charAcceptBtn.disabled = true;
+  els.genBtn.disabled = false;
+  setStatus("Character locked in. You can now enter the scene.");
+  els.playerHint.textContent =
+    "Character locked. You can still reset the run to start over with a new character.";
+}
+
 /* ---------------- Step 1: generate base scene ---------------- */
 
 async function generateImage() {
+  if (!playerReady || !playerCharacter) {
+    setStatus("Create and accept a player character before entering the scene.");
+    log("E101-GEN: Player character not ready.");
+    return;
+  }
+
   try {
     const key = els.sceneSelect.value || "magical_school";
     current.worldTag = key;
@@ -212,24 +336,28 @@ async function generateImage() {
 
     const out = await postJSON("/.netlify/functions/openai", {
       op: "gen_image",
-      prompt: current.prompt
+      prompt: current.prompt,
+      world_tag: current.worldTag,
+      world_description: WORLD_DESCRIPTIONS[current.worldTag],
+      player_character: playerCharacter,
     });
     if (!out.image_url) throw new Error("E101-GEN: Missing image_url");
     current.imageUrl = out.image_url;
 
     els.hud.textContent =
-      "You step into a new hyper-real scene.\n\n" +
-      "Click anywhere in the image to pick a point of interest, then press “2) Confirm selection” " +
+      "You step into a new hyper-real scene in this world.\n\n" +
+      "Click anywhere in the image to pick a point of interest, then press “4) Confirm selection” " +
       "to explore what that part of the scene represents.";
 
     await drawImageToCanvas(current.imageUrl);
-    setStatus("Image ready – click to select, then confirm");
+    els.confirmBtn.disabled = false;
+    setViewButtonsDisabled(false);
+    setStatus("Image ready – click to select, then confirm.");
   } catch (e) {
     setStatus("Error");
     log(String(e));
   } finally {
     els.genBtn.disabled = false;
-    setViewButtonsDisabled(false);
   }
 }
 
@@ -295,12 +423,12 @@ async function onCanvasClick(evt) {
     setStatus(`Using ${activeTool.label} at (${x}, ${y}) – press confirm.`);
     els.hud.textContent =
       `You ready the ${activeTool.label} and focus it on (${x}, ${y}).\n\n` +
-      "Press “2) Confirm selection” to see how the scene responds to this action.";
+      "Press “4) Confirm selection” to see how the scene responds to this action.";
   } else {
     setStatus(`Selection at (${x}, ${y}) – press confirm.`);
     els.hud.textContent =
       `You mark a point at (${x}, ${y}).\n\n` +
-      "Press “2) Confirm selection” to discover how this part of the scene might be described or interacted with.";
+      "Press “4) Confirm selection” to discover how this part of the scene might be described or interacted with.";
   }
 
   try {
@@ -386,7 +514,9 @@ async function onConfirmSelection() {
       held_item_label: heldItemLabel,
       prior_prompt: current.prompt,
       world_tag: current.worldTag,
+      world_description: WORLD_DESCRIPTIONS[current.worldTag],
       npcs: getNpcArray(),
+      player_character: playerCharacter,
     }).catch(e => { throw new Error("E201-ID: " + String(e)); });
 
     if (!idResp.label) throw new Error("E201-ID: No label from vision");
@@ -400,7 +530,6 @@ async function onConfirmSelection() {
     current.stowOptionIndex =
       Number.isInteger(idResp.stow_option_index) ? idResp.stow_option_index : null;
 
-    // Experimental NPC: if this selection is a character, store/update their sheet
     if (idResp.is_character && idResp.character_name) {
       upsertNpc(idResp.character_name, idResp.character_summary || "");
       log(`NPC updated: ${idResp.character_name}`);
@@ -461,7 +590,9 @@ async function onChooseOption(index) {
       interaction_choice: optionText,
       prior_prompt: current.prompt,
       world_tag: current.worldTag,
+      world_description: WORLD_DESCRIPTIONS[current.worldTag],
       npcs: getNpcArray(),
+      player_character: playerCharacter,
     }).catch(e => { throw new Error("E301-FOLLOW: " + String(e)); });
 
     if (!follow.image_url) throw new Error("E301-FOLLOW: Missing image_url");
@@ -541,7 +672,9 @@ async function onChangeView(direction) {
       direction,
       prior_prompt: current.prompt,
       world_tag: current.worldTag,
+      world_description: WORLD_DESCRIPTIONS[current.worldTag],
       npcs: getNpcArray(),
+      player_character: playerCharacter,
     }).catch(e => { throw new Error("E501-VIEW: " + String(e)); });
 
     if (!resp.image_url) throw new Error("E501-VIEW: Missing image_url");
@@ -602,8 +735,8 @@ els.genBtn.onclick = generateImage;
 els.confirmBtn.onclick = onConfirmSelection;
 els.resetBtn.onclick = () => {
   current = {
-    prompt: current.prompt,
-    worldTag: current.worldTag,
+    prompt: SCENE_PROMPTS[els.sceneSelect.value] || SCENE_PROMPTS.magical_school,
+    worldTag: els.sceneSelect.value || "magical_school",
     imageUrl: "",
     clicked: null,
     labeled: "",
@@ -615,11 +748,19 @@ els.resetBtn.onclick = () => {
   backpack[0] = { type: "cursor", label: "Cursor", spriteUrl: null };
   activeSlotIndex = 0;
   npcMap = {};
+  playerCharacter = null;
+  playerReady = false;
+  els.playerPortrait.src = "";
+  els.playerHint.textContent = "No portrait yet. Generate or randomize to see your character.";
+  els.charAcceptBtn.disabled = true;
+  els.genBtn.disabled = true;
+
   ctx.clearRect(0,0,W,H);
   clearLog();
   renderBackpack();
   els.confirmBtn.disabled = true;
-  setStatus("Ready");
+  setViewButtonsDisabled(true);
+  setStatus("Pick a world, then create your character.");
 };
 
 els.canvas.addEventListener("click", onCanvasClick);
@@ -629,5 +770,12 @@ els.viewUpBtn.onclick = () => onChangeView("up");
 els.viewDownBtn.onclick = () => onChangeView("down");
 els.viewZoomOutBtn.onclick = () => onChangeView("zoom_out");
 
+// player character events
+els.charGenBtn.onclick = () => generatePlayerPortrait(false);
+els.charRandomBtn.onclick = () => generatePlayerPortrait(true);
+els.charAcceptBtn.onclick = acceptPlayerCharacter;
+
 // Initial render
 renderBackpack();
+setViewButtonsDisabled(true);
+els.genBtn.disabled = true;
