@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>Point & Click MVP</title>
+  <title>Point & Click Role-Playing MVP</title>
   <style>
     :root {
       color-scheme: dark;
@@ -48,6 +48,15 @@
       padding: 10px;
       border: 1px solid #1f2937;
     }
+    .card h2 {
+      font-size: 0.95rem;
+      margin: 0 0 6px;
+    }
+    .subheading {
+      font-size: 0.78rem;
+      opacity: 0.8;
+      margin-bottom: 6px;
+    }
     .btn {
       background: #111827;
       color: #e5e7eb;
@@ -67,23 +76,24 @@
       opacity: 0.5;
       cursor: not-allowed;
     }
-    #hud {
-      margin-top: 8px;
-      font-size: 0.78rem;
-      white-space: pre-wrap;
-      word-wrap: break-word;
-      line-height: 1.4;
+    select {
+      background:#020617;
+      color:#e5e7eb;
+      border-radius:6px;
+      border:1px solid #1f2937;
+      padding:2px 6px;
+      font-size:0.8rem;
     }
-    #choices {
-      margin-top: 8px;
-      font-size: 0.8rem;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
+    label {
+      font-size:0.75rem;
+      display:block;
+      margin-bottom:4px;
     }
-    #choices button {
-      width: 100%;
-      justify-content: flex-start;
+    .field-row {
+      display:flex;
+      flex-wrap:wrap;
+      gap:6px;
+      margin-bottom:4px;
     }
     #stage {
       margin: 8px auto 0;
@@ -107,6 +117,24 @@
       width: 100%;
       height: 100%;
       image-rendering: crisp-edges;
+    }
+    #hud {
+      margin-top: 8px;
+      font-size: 0.78rem;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      line-height: 1.4;
+    }
+    #choices {
+      margin-top: 8px;
+      font-size: 0.8rem;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    #choices button {
+      width: 100%;
+      justify-content: flex-start;
     }
     #log {
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
@@ -153,6 +181,19 @@
       padding: 2px;
       pointer-events: none;
     }
+    #playerPortrait {
+      width: 100%;
+      border-radius: 8px;
+      border: 1px solid #1f2937;
+      object-fit: cover;
+      max-height: 240px;
+      background:#020617;
+    }
+    #playerHint {
+      font-size:0.75rem;
+      margin-top:4px;
+      opacity:0.8;
+    }
     @media (max-width: 640px) {
       .wrap {
         padding: 12px 8px 24px;
@@ -168,8 +209,8 @@
 </head>
 <body>
   <div class="wrap">
-    <h1>Point & Click MVP</h1>
-    <div id="status">Ready</div>
+    <h1>Point & Click Role-Playing MVP</h1>
+    <div id="status">Pick a world, then create your character.</div>
 
     <div class="row">
       <!-- Left: scene & choices -->
@@ -177,31 +218,32 @@
         <!-- Scene selector -->
         <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:6px;">
           <label style="font-size:0.8rem;">
-            Start scene:
-            <select id="sceneSelect" style="background:#020617;color:#e5e7eb;border-radius:6px;border:1px solid #1f2937;padding:2px 6px;font-size:0.8rem;">
+            World:
+            <select id="sceneSelect">
               <option value="magical_school">Magical school</option>
               <option value="university">University campus</option>
               <option value="western">Western frontier town</option>
               <option value="private_eye">1940s private investigator</option>
             </select>
           </label>
+          <span style="font-size:0.75rem; opacity:0.75;">1) Choose world → 2) Create character → 3) Enter scene</span>
         </div>
 
         <!-- Main controls -->
         <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
-          <button id="genBtn" class="btn">1) Generate image</button>
-          <button id="confirmBtn" class="btn" disabled>2) Confirm selection</button>
-          <button id="resetBtn" class="btn">Reset</button>
+          <button id="genBtn" class="btn" disabled>3) Enter scene</button>
+          <button id="confirmBtn" class="btn" disabled>4) Confirm selection</button>
+          <button id="resetBtn" class="btn">Reset run</button>
         </div>
 
         <!-- View/navigation controls -->
         <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-top:6px; font-size:0.8rem;">
           <span>Look:</span>
-          <button id="viewLeftBtn" class="btn">⬅ Left</button>
-          <button id="viewRightBtn" class="btn">Right ➡</button>
-          <button id="viewUpBtn" class="btn">⬆ Up</button>
-          <button id="viewDownBtn" class="btn">Down ⬇</button>
-          <button id="viewZoomOutBtn" class="btn">🔍 Zoom out</button>
+          <button id="viewLeftBtn" class="btn" disabled>⬅ Left</button>
+          <button id="viewRightBtn" class="btn" disabled>Right ➡</button>
+          <button id="viewUpBtn" class="btn" disabled>⬆ Up</button>
+          <button id="viewDownBtn" class="btn" disabled>Down ⬇</button>
+          <button id="viewZoomOutBtn" class="btn" disabled>🔍 Zoom out</button>
         </div>
 
         <div id="stage">
@@ -216,13 +258,130 @@
         <div id="choices"></div>
       </div>
 
-      <!-- Right: backpack + console -->
+      <!-- Right: player, backpack + console -->
       <div class="col">
+        <!-- Player character card -->
+        <div class="card" style="margin-bottom:8px;">
+          <h2>Player character</h2>
+          <div class="subheading">Define your character, then generate a portrait. You can randomize until you like it.</div>
+
+          <div class="field-row">
+            <label>
+              Age range
+              <select id="charAge">
+                <option value="late teens">late teens</option>
+                <option value="early twenties">early twenties</option>
+                <option value="late twenties">late twenties</option>
+                <option value="thirties">thirties</option>
+                <option value="forties">forties</option>
+              </select>
+            </label>
+            <label>
+              Sex
+              <select id="charSex">
+                <option value="woman">woman</option>
+                <option value="man">man</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="field-row">
+            <label>
+              Weight build
+              <select id="charWeight">
+                <option value="slender">slender</option>
+                <option value="average build">average build</option>
+                <option value="athletic">athletic</option>
+                <option value="heavyset">heavyset</option>
+              </select>
+            </label>
+            <label>
+              Chest size
+              <select id="charChest">
+                <option value="flat chest">flat</option>
+                <option value="small chest">small</option>
+                <option value="medium chest">medium</option>
+                <option value="large chest">large</option>
+              </select>
+            </label>
+            <label>
+              Hip size
+              <select id="charHips">
+                <option value="narrow hips">narrow</option>
+                <option value="average hips">average</option>
+                <option value="wide hips">wide</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="field-row">
+            <label>
+              Hair style
+              <select id="charHairStyle">
+                <option value="short hair">short</option>
+                <option value="medium-length hair">medium</option>
+                <option value="long hair">long</option>
+                <option value="curly hair">curly</option>
+                <option value="pulled into a ponytail">ponytail</option>
+                <option value="tied up in a bun">bun</option>
+              </select>
+            </label>
+            <label>
+              Hair color
+              <select id="charHairColor">
+                <option value="dark brown hair">dark brown</option>
+                <option value="black hair">black</option>
+                <option value="blond hair">blond</option>
+                <option value="red hair">red</option>
+                <option value="light brown hair">light brown</option>
+                <option value="gray hair">gray</option>
+              </select>
+            </label>
+            <label>
+              Eye color
+              <select id="charEyes">
+                <option value="brown eyes">brown</option>
+                <option value="blue eyes">blue</option>
+                <option value="green eyes">green</option>
+                <option value="hazel eyes">hazel</option>
+                <option value="gray eyes">gray</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="field-row">
+            <label style="flex:1 1 100%;">
+              Profession
+              <select id="charProfession">
+                <option value="student">student</option>
+                <option value="researcher">researcher</option>
+                <option value="sheriff">sheriff</option>
+                <option value="bartender">bartender</option>
+                <option value="private investigator">private investigator</option>
+                <option value="magic student">magic student</option>
+                <option value="professor">professor</option>
+                <option value="ranch hand">ranch hand</option>
+              </select>
+            </label>
+          </div>
+
+          <div style="display:flex; gap:6px; flex-wrap:wrap; margin:6px 0;">
+            <button id="charGenBtn" class="btn">Generate portrait</button>
+            <button id="charRandomBtn" class="btn">Random character</button>
+            <button id="charAcceptBtn" class="btn" disabled>Use this character</button>
+          </div>
+
+          <img id="playerPortrait" alt="Player portrait preview"/>
+          <div id="playerHint">No portrait yet. Generate or randomize to see your character.</div>
+        </div>
+
+        <!-- Backpack -->
         <div class="card">
           <strong>Backpack</strong>
           <div id="backpackGrid"></div>
         </div>
 
+        <!-- Console -->
         <div class="card" style="margin-top:8px; max-width: 360px;">
           <strong>Console</strong>
           <div id="log"></div>
