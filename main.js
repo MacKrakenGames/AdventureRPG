@@ -1,4 +1,4 @@
-/* main.js — Point & Click MVP with story, backpack, and camera navigation */
+/* main.js — Point & Click MVP with role-playing, backpack, and camera navigation */
 
 const els = {
   genBtn: document.getElementById("genBtn"),
@@ -37,7 +37,6 @@ const SCENE_PROMPTS = {
 // Backpack state
 const BACKPACK_SLOTS = 32;
 let backpack = new Array(BACKPACK_SLOTS).fill(null);
-// Slot 0 is always the cursor tool
 backpack[0] = { type: "cursor", label: "Cursor", spriteUrl: null };
 let activeSlotIndex = 0;
 
@@ -45,7 +44,7 @@ let activeSlotIndex = 0;
 let current = {
   prompt: SCENE_PROMPTS.magical_school,
   imageUrl: "",
-  clicked: null, // {x,y}
+  clicked: null,
   labeled: "",
   options: [],
   carryable: false,
@@ -63,7 +62,7 @@ function clearLog(){
   renderChoices();
 }
 
-// Simple JSON POST helper with content-type guard
+// JSON helper
 async function postJSON(url, body) {
   const res = await fetch(url, {
     method: "POST",
@@ -82,7 +81,7 @@ async function postJSON(url, body) {
   return data;
 }
 
-/* ---------------- Backpack helpers ---------------- */
+/* -------- Backpack helpers -------- */
 
 function renderBackpack() {
   els.backpackGrid.innerHTML = "";
@@ -116,13 +115,11 @@ function renderBackpack() {
 }
 
 function onBackpackSlotClick(i) {
-  if (!backpack[i]) {
-    return;
-  }
+  if (!backpack[i]) return;
   activeSlotIndex = i;
   renderBackpack();
   if (i === 0) {
-    setStatus("Cursor tool selected – click the scene, then confirm.");
+    setStatus("Cursor selected – click the scene, then confirm.");
     els.hud.textContent =
       "You switch to the simple cursor.\nClick in the scene to choose a point, then confirm.";
   } else {
@@ -153,11 +150,10 @@ function setViewButtonsDisabled(disabled) {
   els.viewZoomOutBtn.disabled = disabled;
 }
 
-/* ---------------- STEP 1: Generate base image (API) ----------------
-   Client error code: E101-GEN  (server: S101-GEN) */
+/* -------- Step 1: generate base scene -------- */
+
 async function generateImage() {
   try {
-    // Update prompt from scene selector
     const key = els.sceneSelect.value || "magical_school";
     current.prompt = SCENE_PROMPTS[key] || SCENE_PROMPTS.magical_school;
 
@@ -183,11 +179,12 @@ async function generateImage() {
     current.imageUrl = out.image_url;
 
     els.hud.textContent =
-      `You arrive in a new scene.\n` +
-      `Tap/click anywhere to select a point, then press "2) Confirm selection".`;
+      "You step into a new scene.\n\n" +
+      "Click anywhere in the image to pick a point of interest, then press “2) Confirm selection” " +
+      "to explore what that part of the scene represents.";
 
-    await drawImageToCanvas(current.imageUrl);  // step 2
-    setStatus("Image ready – tap to select, then confirm");
+    await drawImageToCanvas(current.imageUrl);
+    setStatus("Image ready – click to select, then confirm");
   } catch (e) {
     setStatus("Error");
     log(String(e));
@@ -197,8 +194,8 @@ async function generateImage() {
   }
 }
 
-/* ---------------- STEP 2: Draw image into 768x512 canvas ----------------
-   Client error code: E111-DRAW */
+/* -------- Draw image into canvas -------- */
+
 async function drawImageToCanvas(url) {
   return new Promise((resolve, reject) => {
     try {
@@ -235,8 +232,8 @@ async function drawImageToCanvas(url) {
   });
 }
 
-/* ---------------- STEP 3: User click → record pixel coords ----------------
-   Client error code: E121-CLICK */
+/* -------- Step 3: on click, record coords -------- */
+
 async function onCanvasClick(evt) {
   if (!current.imageUrl) {
     log("E121-CLICK: Click ignored; no image yet");
@@ -247,7 +244,7 @@ async function onCanvasClick(evt) {
   const x = Math.floor((evt.clientX - rect.left) * (W / rect.width));
   const y = Math.floor((evt.clientY - rect.top) * (H / rect.height));
   current.clicked = { x, y };
-  current.options = []; // clear old options when new spot is chosen
+  current.options = [];
   current.carryable = false;
   current.stowOptionIndex = null;
   renderChoices();
@@ -256,20 +253,20 @@ async function onCanvasClick(evt) {
 
   const activeTool = backpack[activeSlotIndex];
   if (activeTool && activeTool.type === "item") {
-    setStatus(`Using ${activeTool.label} at (${x}, ${y}) – click "2) Confirm selection"`);
+    setStatus(`Using ${activeTool.label} at (${x}, ${y}) – press confirm.`);
     els.hud.textContent =
-      `You aim the ${activeTool.label} at (${x}, ${y}).\n` +
-      `Confirm to see how the scene responds.`;
+      `You ready the ${activeTool.label} and focus it on (${x}, ${y}).\n\n` +
+      "Press “2) Confirm selection” to see how the scene responds to this action.";
   } else {
-    setStatus(`Selection at (${x}, ${y}) – click "2) Confirm selection"`);
+    setStatus(`Selection at (${x}, ${y}) – press confirm.`);
     els.hud.textContent =
-      `You mark a point at (${x}, ${y}).\n` +
-      `Confirm to discover what this part of the scene represents.`;
+      `You mark a point at (${x}, ${y}).\n\n` +
+      "Press “2) Confirm selection” to discover how this part of the scene might be described or interacted with.";
   }
 
   try {
-    els.confirmBtn.disabled = true; // avoid double confirm while redrawing
-    await redrawImageWithCursor(x, y); // redraw base + single cursor
+    els.confirmBtn.disabled = true;
+    await redrawImageWithCursor(x, y);
     els.confirmBtn.disabled = false;
   } catch (e) {
     log("E131-CURSOR: " + String(e));
@@ -277,19 +274,17 @@ async function onCanvasClick(evt) {
   }
 }
 
-/* ---------------- STEP 4: Draw cursor on canvas ----------------
-   Client error code: E131-CURSOR */
+/* -------- Draw cursor -------- */
+
 function drawCursor(x, y) {
   const R = 6;
   ctx.save();
-  // dark outline
   ctx.lineWidth = 3;
   ctx.strokeStyle = "rgba(0,0,0,0.7)";
   ctx.beginPath();
   ctx.arc(x, y, R + 2, 0, Math.PI * 2);
   ctx.stroke();
 
-  // crosshair
   ctx.strokeStyle = "#38bdf8";
   ctx.lineWidth = 2;
   ctx.beginPath();
@@ -301,23 +296,20 @@ function drawCursor(x, y) {
   ctx.lineTo(x, y + 12);
   ctx.stroke();
 
-  // ring
   ctx.beginPath();
   ctx.arc(x, y, R, 0, Math.PI * 2);
   ctx.stroke();
   ctx.restore();
 }
 
-// helper: redraw base image, then draw a single cursor
 async function redrawImageWithCursor(x, y) {
   if (!current.imageUrl) return;
   await drawImageToCanvas(current.imageUrl);
   drawCursor(x, y);
 }
 
-/* ---------------- STEP 5: Confirm selection → identify object + get story-rich options ----------------
-   Client error codes:
-     - E201-ID (identify + options) */
+/* -------- Step 5: confirm selection → identify + options -------- */
+
 async function onConfirmSelection() {
   if (!current.imageUrl) {
     log("E201-ID: No image loaded – generate one first");
@@ -334,7 +326,6 @@ async function onConfirmSelection() {
     els.genBtn.disabled = true;
     setViewButtonsDisabled(true);
 
-    // Export canvas (with cursor) as PNG data URL
     let markedDataUrl;
     try {
       markedDataUrl = els.canvas.toDataURL("image/png");
@@ -353,7 +344,8 @@ async function onConfirmSelection() {
       marked_image_data_url: markedDataUrl,
       x, y,
       canvas_size: { width: W, height: H },
-      held_item_label: heldItemLabel
+      held_item_label: heldItemLabel,
+      prior_prompt: current.prompt
     }).catch(e => { throw new Error("E201-ID: " + String(e)); });
 
     if (!idResp.label) throw new Error("E201-ID: No label from vision");
@@ -371,8 +363,9 @@ async function onConfirmSelection() {
     log("Options:\n - " + current.options.join("\n - "));
 
     els.hud.textContent =
-      `You focus on: ${current.labeled}.\n` +
-      `Choose how you wish to interact with it.`;
+      `You focus on: ${current.labeled}.\n\n` +
+      "Below are several ways you might choose to interact with this part of the scene. " +
+      "Pick the option that best matches the role you want to play.";
 
     renderChoices();
 
@@ -387,14 +380,11 @@ async function onConfirmSelection() {
   } finally {
     els.genBtn.disabled = false;
     setViewButtonsDisabled(false);
-    // confirm remains disabled until next selection
   }
 }
 
-/* ---------------- STEP 6: User chooses an interaction option → generate next image + story ----------------
-   Client error code:
-     - E301-FOLLOW (follow-up image step)
-     - E401-SPRITE (sprite generation) */
+/* -------- Step 6: choose option → new scene + story -------- */
+
 async function onChooseOption(index) {
   if (!current.labeled) {
     log("E301-FOLLOW: No labeled selection yet");
@@ -412,13 +402,12 @@ async function onChooseOption(index) {
     index === current.stowOptionIndex;
 
   try {
-    setStatus("Creating new scene from selection…");
+    setStatus("Playing out your choice…");
     els.genBtn.disabled = true;
     els.confirmBtn.disabled = true;
     disableChoiceButtons(true);
     setViewButtonsDisabled(true);
 
-    // First, generate the new scene + story
     const follow = await postJSON("/.netlify/functions/openai", {
       op: "gen_followup_image",
       clicked_label: current.labeled,
@@ -449,12 +438,11 @@ async function onChooseOption(index) {
       (storyTrim
         ? storyTrim + "\n\n"
         : "") +
-      `Tap somewhere in this new scene to continue the story.`;
+      "Click somewhere in this new scene when you’re ready to make your next choice.";
 
     await drawImageToCanvas(current.imageUrl);
-    setStatus("New image ready – tap to select, then confirm");
+    setStatus("New scene ready – click to select, then confirm");
 
-    // If this option represents stowing a carryable item, generate a sprite and add to backpack
     if (isStow && follow.clicked_label_for_sprite !== false) {
       try {
         const spriteResp = await postJSON("/.netlify/functions/openai", {
@@ -476,7 +464,6 @@ async function onChooseOption(index) {
   } finally {
     els.genBtn.disabled = false;
     setViewButtonsDisabled(false);
-    // Confirm will be re-enabled on next click
   }
 }
 
@@ -485,9 +472,8 @@ function disableChoiceButtons(disabled) {
   buttons.forEach(b => b.disabled = disabled);
 }
 
-/* ---------------- STEP 7: Camera / view navigation ----------------
-   Client error code:
-     - E501-VIEW */
+/* -------- Camera / view navigation -------- */
+
 async function onChangeView(direction) {
   if (!current.prompt || !current.imageUrl) {
     log("E501-VIEW: No scene yet – generate one first");
@@ -495,7 +481,7 @@ async function onChangeView(direction) {
   }
 
   try {
-    setStatus(`Looking ${direction.replace("_", " ")}…`);
+    setStatus(`Shifting your viewpoint ${direction.replace("_", " ")}…`);
     els.genBtn.disabled = true;
     els.confirmBtn.disabled = true;
     setViewButtonsDisabled(true);
@@ -522,25 +508,26 @@ async function onChangeView(direction) {
     if (story) {
       log(`View shift (${direction}):\n${story}`);
       els.hud.textContent =
-        story + "\n\nTap somewhere in this new vantage point to continue the story.";
+        story + "\n\nClick somewhere in this new viewpoint to keep role-playing.";
     } else {
       els.hud.textContent =
-        `You adjust your view (${direction}).\nTap somewhere to interact with this new vantage point.`;
+        `You adjust your view ${direction}.\n\n` +
+        "Click somewhere in this new vantage point to decide what you pay attention to next.";
     }
 
     await drawImageToCanvas(current.imageUrl);
-    setStatus("New viewpoint ready – tap to select, then confirm");
+    setStatus("New viewpoint ready – click to select, then confirm");
   } catch (e) {
     setStatus("Error");
     log(String(e));
   } finally {
     els.genBtn.disabled = false;
     setViewButtonsDisabled(false);
-    // confirm re-enabled on next click
   }
 }
 
-/* ---------------- UI: render choices ---------------- */
+/* -------- render choices -------- */
+
 function renderChoices() {
   els.choices.innerHTML = "";
   if (!current.options || current.options.length === 0) return;
@@ -558,7 +545,7 @@ function renderChoices() {
   });
 }
 
-/* ---------------- Wiring ---------------- */
+/* -------- wiring -------- */
 
 els.genBtn.onclick = generateImage;
 els.confirmBtn.onclick = onConfirmSelection;
@@ -583,8 +570,6 @@ els.resetBtn.onclick = () => {
 };
 
 els.canvas.addEventListener("click", onCanvasClick);
-
-// View nav buttons
 els.viewLeftBtn.onclick = () => onChangeView("left");
 els.viewRightBtn.onclick = () => onChangeView("right");
 els.viewUpBtn.onclick = () => onChangeView("up");
