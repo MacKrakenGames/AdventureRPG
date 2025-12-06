@@ -14,7 +14,7 @@
     html, body {
       margin: 0;
       padding: 0;
-      overflow-x: hidden; /* prevent horizontal scroll */
+      overflow-x: hidden;
       background: #020617;
       color: #e5e7eb;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -68,10 +68,11 @@
       cursor: not-allowed;
     }
     #hud {
-      margin-top: 6px;
-      font-size: 0.75rem;
+      margin-top: 8px;
+      font-size: 0.78rem;
       white-space: pre-wrap;
       word-wrap: break-word;
+      line-height: 1.4;
     }
     #choices {
       margin-top: 8px;
@@ -84,7 +85,6 @@
       width: 100%;
       justify-content: flex-start;
     }
-    /* Stage + canvas: responsive, fixed 768x512 coordinate system */
     #stage {
       margin: 8px auto 0;
       width: 100%;
@@ -98,7 +98,7 @@
     #stageInner {
       position: relative;
       width: 100%;
-      padding-top: calc(512 / 768 * 100%); /* keep aspect ratio */
+      padding-top: calc(512 / 768 * 100%);
     }
     #imgCanvas {
       position: absolute;
@@ -119,8 +119,6 @@
     strong {
       font-size: 0.85rem;
     }
-
-    /* Backpack grid */
     #backpackGrid {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
@@ -155,7 +153,6 @@
       padding: 2px;
       pointer-events: none;
     }
-
     @media (max-width: 640px) {
       .wrap {
         padding: 12px 8px 24px;
@@ -207,13 +204,14 @@
           <button id="viewZoomOutBtn" class="btn">🔍 Zoom out</button>
         </div>
 
-        <div id="hud"></div>
-
         <div id="stage">
           <div id="stageInner">
             <canvas id="imgCanvas" width="768" height="512"></canvas>
           </div>
         </div>
+
+        <!-- Story & guidance go here, under the image -->
+        <div id="hud"></div>
 
         <div id="choices"></div>
       </div>
