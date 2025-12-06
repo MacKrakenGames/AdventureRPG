@@ -1,4 +1,4 @@
-/* main.js — Point & Click MVP with story-rich choices and a backpack */
+/* main.js — Point & Click MVP with story, backpack, and camera navigation */
 
 const els = {
   genBtn: document.getElementById("genBtn"),
@@ -10,11 +10,29 @@ const els = {
   hud: document.getElementById("hud"),
   choices: document.getElementById("choices"),
   backpackGrid: document.getElementById("backpackGrid"),
+  sceneSelect: document.getElementById("sceneSelect"),
+  viewLeftBtn: document.getElementById("viewLeftBtn"),
+  viewRightBtn: document.getElementById("viewRightBtn"),
+  viewUpBtn: document.getElementById("viewUpBtn"),
+  viewDownBtn: document.getElementById("viewDownBtn"),
+  viewZoomOutBtn: document.getElementById("viewZoomOutBtn"),
 };
 const ctx = els.canvas.getContext("2d");
 
 // Logical pixel coordinate system (canvas)
 const W = 768, H = 512;
+
+// Scene templates
+const SCENE_PROMPTS = {
+  magical_school:
+    "An enchanted boarding school corridor at night, floating candles, portraits whispering, arched stone windows, warm torchlight, cinematic, richly detailed, fantasy illustration.",
+  university:
+    "A modern university campus quad at dusk, students walking with backpacks, old brick buildings and trees, soft golden hour light, cinematic wide shot, realistic.",
+  western:
+    "A dusty main street of a western frontier town at high noon, wooden saloon, hitching posts, horses, sun-bleached signs, mountains in the distance, cinematic western film frame.",
+  private_eye:
+    "A cramped 1940s private investigator's office at night, venetian blinds casting shadows, desk lamp, cluttered desk with files, city lights through the window, cinematic noir, moody lighting."
+};
 
 // Backpack state
 const BACKPACK_SLOTS = 32;
@@ -23,12 +41,13 @@ let backpack = new Array(BACKPACK_SLOTS).fill(null);
 backpack[0] = { type: "cursor", label: "Cursor", spriteUrl: null };
 let activeSlotIndex = 0;
 
+// Game state
 let current = {
-  prompt: "A mysterious table with assorted objects under warm lamp light, cinematic, photoreal",
+  prompt: SCENE_PROMPTS.magical_school,
   imageUrl: "",
   clicked: null, // {x,y}
-  labeled: "",   // what the model said we clicked
-  options: [],   // interaction options for the clicked object
+  labeled: "",
+  options: [],
   carryable: false,
   stowOptionIndex: null,
 };
@@ -77,7 +96,7 @@ function renderBackpack() {
     if (slot) {
       if (slot.type === "cursor") {
         const span = document.createElement("span");
-        span.textContent = "✛"; // crosshair-ish
+        span.textContent = "✛";
         div.appendChild(span);
       } else if (slot.spriteUrl) {
         const img = document.createElement("img");
@@ -98,7 +117,6 @@ function renderBackpack() {
 
 function onBackpackSlotClick(i) {
   if (!backpack[i]) {
-    // Can't select an empty slot
     return;
   }
   activeSlotIndex = i;
@@ -127,18 +145,33 @@ function addToBackpack(label, spriteUrl) {
   return false;
 }
 
+function setViewButtonsDisabled(disabled) {
+  els.viewLeftBtn.disabled = disabled;
+  els.viewRightBtn.disabled = disabled;
+  els.viewUpBtn.disabled = disabled;
+  els.viewDownBtn.disabled = disabled;
+  els.viewZoomOutBtn.disabled = disabled;
+}
+
 /* ---------------- STEP 1: Generate base image (API) ----------------
    Client error code: E101-GEN  (server: S101-GEN) */
 async function generateImage() {
   try {
-    setStatus("Generating image…");
+    // Update prompt from scene selector
+    const key = els.sceneSelect.value || "magical_school";
+    current.prompt = SCENE_PROMPTS[key] || SCENE_PROMPTS.magical_school;
+
+    setStatus("Generating scene…");
     els.genBtn.disabled = true;
     els.confirmBtn.disabled = true;
+    setViewButtonsDisabled(true);
+
     current.clicked = null;
     current.labeled = "";
     current.options = [];
     current.carryable = false;
     current.stowOptionIndex = null;
+
     ctx.clearRect(0,0,W,H);
     clearLog();
 
@@ -150,9 +183,8 @@ async function generateImage() {
     current.imageUrl = out.image_url;
 
     els.hud.textContent =
-      `An opening scene is ready.\n` +
-      `Tap/click anywhere to select a point, then press "2) Confirm selection".\n` +
-      `URL: ${current.imageUrl.slice(0,80)}…`;
+      `You arrive in a new scene.\n` +
+      `Tap/click anywhere to select a point, then press "2) Confirm selection".`;
 
     await drawImageToCanvas(current.imageUrl);  // step 2
     setStatus("Image ready – tap to select, then confirm");
@@ -161,6 +193,7 @@ async function generateImage() {
     log(String(e));
   } finally {
     els.genBtn.disabled = false;
+    setViewButtonsDisabled(false);
   }
 }
 
@@ -299,6 +332,7 @@ async function onConfirmSelection() {
     setStatus("Analyzing selection…");
     els.confirmBtn.disabled = true;
     els.genBtn.disabled = true;
+    setViewButtonsDisabled(true);
 
     // Export canvas (with cursor) as PNG data URL
     let markedDataUrl;
@@ -352,6 +386,7 @@ async function onConfirmSelection() {
     log(String(e));
   } finally {
     els.genBtn.disabled = false;
+    setViewButtonsDisabled(false);
     // confirm remains disabled until next selection
   }
 }
@@ -381,6 +416,7 @@ async function onChooseOption(index) {
     els.genBtn.disabled = true;
     els.confirmBtn.disabled = true;
     disableChoiceButtons(true);
+    setViewButtonsDisabled(true);
 
     // First, generate the new scene + story
     const follow = await postJSON("/.netlify/functions/openai", {
@@ -426,7 +462,6 @@ async function onChooseOption(index) {
           item_label: follow.clicked_label_for_sprite || follow.clicked_label || current.labeled
         });
         if (spriteResp.image_url) {
-          // For sprite label, use the original label from the selection (not the long option text)
           const labelForBackpack = follow.clicked_label_for_sprite || follow.clicked_label || "Item";
           addToBackpack(labelForBackpack, spriteResp.image_url);
           log(`Added "${labelForBackpack}" to backpack.`);
@@ -440,6 +475,7 @@ async function onChooseOption(index) {
     log(String(e));
   } finally {
     els.genBtn.disabled = false;
+    setViewButtonsDisabled(false);
     // Confirm will be re-enabled on next click
   }
 }
@@ -447,6 +483,61 @@ async function onChooseOption(index) {
 function disableChoiceButtons(disabled) {
   const buttons = els.choices.querySelectorAll("button");
   buttons.forEach(b => b.disabled = disabled);
+}
+
+/* ---------------- STEP 7: Camera / view navigation ----------------
+   Client error code:
+     - E501-VIEW */
+async function onChangeView(direction) {
+  if (!current.prompt || !current.imageUrl) {
+    log("E501-VIEW: No scene yet – generate one first");
+    return;
+  }
+
+  try {
+    setStatus(`Looking ${direction.replace("_", " ")}…`);
+    els.genBtn.disabled = true;
+    els.confirmBtn.disabled = true;
+    setViewButtonsDisabled(true);
+    disableChoiceButtons(true);
+
+    const resp = await postJSON("/.netlify/functions/openai", {
+      op: "change_view",
+      direction,
+      prior_prompt: current.prompt
+    }).catch(e => { throw new Error("E501-VIEW: " + String(e)); });
+
+    if (!resp.image_url) throw new Error("E501-VIEW: Missing image_url");
+
+    current.imageUrl = resp.image_url;
+    current.prompt = resp.next_prompt || current.prompt;
+    current.clicked = null;
+    current.labeled = "";
+    current.options = [];
+    current.carryable = false;
+    current.stowOptionIndex = null;
+    renderChoices();
+
+    const story = (resp.story || "").trim();
+    if (story) {
+      log(`View shift (${direction}):\n${story}`);
+      els.hud.textContent =
+        story + "\n\nTap somewhere in this new vantage point to continue the story.";
+    } else {
+      els.hud.textContent =
+        `You adjust your view (${direction}).\nTap somewhere to interact with this new vantage point.`;
+    }
+
+    await drawImageToCanvas(current.imageUrl);
+    setStatus("New viewpoint ready – tap to select, then confirm");
+  } catch (e) {
+    setStatus("Error");
+    log(String(e));
+  } finally {
+    els.genBtn.disabled = false;
+    setViewButtonsDisabled(false);
+    // confirm re-enabled on next click
+  }
 }
 
 /* ---------------- UI: render choices ---------------- */
@@ -492,6 +583,13 @@ els.resetBtn.onclick = () => {
 };
 
 els.canvas.addEventListener("click", onCanvasClick);
+
+// View nav buttons
+els.viewLeftBtn.onclick = () => onChangeView("left");
+els.viewRightBtn.onclick = () => onChangeView("right");
+els.viewUpBtn.onclick = () => onChangeView("up");
+els.viewDownBtn.onclick = () => onChangeView("down");
+els.viewZoomOutBtn.onclick = () => onChangeView("zoom_out");
 
 // Initial render
 renderBackpack();
