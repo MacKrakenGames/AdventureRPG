@@ -1,4 +1,4 @@
-// netlify/functions/openai.js — role-playing MVP with hyper-real style + NPC sheets
+// netlify/functions/openai.js — role-playing MVP with hyper-real style + world constraints + NPC + player sheet
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
@@ -75,10 +75,35 @@ exports.handler = async (event) => {
 
     const op = body.op;
 
+    const worldTag = str(body.world_tag);
+    const worldDesc = str(body.world_description);
+    const playerCharacter = body.player_character || null;
+    const npcs = Array.isArray(body.npcs) ? body.npcs : [];
+
+    const playerSheetText = playerCharacter
+      ? "Player-character sheet:\n" +
+        `- age range: ${playerCharacter.age_range || "unspecified"}\n` +
+        `- sex: ${playerCharacter.sex || "unspecified"}\n` +
+        `- build: ${playerCharacter.weight_range || "unspecified"}\n` +
+        `- chest: ${playerCharacter.chest_size || "unspecified"}\n` +
+        `- hips: ${playerCharacter.hip_size || "unspecified"}\n` +
+        `- hair: ${playerCharacter.hair_style || "unspecified"}, ${playerCharacter.hair_color || "unspecified"}\n` +
+        `- eyes: ${playerCharacter.eye_color || "unspecified"}\n` +
+        `- profession: ${playerCharacter.profession || "unspecified"}\n` +
+        "Assume this is the person behind the camera, the one NPCs are speaking to.\n"
+      : "";
+
+    const worldText = worldTag || worldDesc
+      ? `Persistent world constraints:\nWorld tag: ${worldTag || "unspecified"}\n` +
+        (worldDesc ? worldDesc + "\n" : "") +
+        "Never leave this world. Keep historical era, technology, clothing, and architecture consistent.\n\n"
+      : "";
+
     /* ---------- 1) generate initial image ---------- */
 
     if (op === "gen_image") {
-      const prompt = str(body.prompt) || ("A room, " + GLOBAL_STYLE);
+      const basePrompt = str(body.prompt) || ("A room, " + GLOBAL_STYLE);
+      const prompt = `${basePrompt} ${GLOBAL_STYLE}`;
       try {
         const img = await openai("images/generations", {
           model: "gpt-image-1",
@@ -97,6 +122,48 @@ exports.handler = async (event) => {
       }
     }
 
+    /* ---------- 1b) generate player portrait ---------- */
+
+    if (op === "gen_player_portrait") {
+      const wTag = worldTag || "university";
+      const sheet = playerCharacter || {};
+      const basePrompt =
+        `Hyper-realistic portrait photograph of a ${sheet.age_range || "adult"} ${sheet.sex || "person"} ` +
+        `with ${sheet.hair_style || "short hair"} and ${sheet.hair_color || "brown hair"}, ` +
+        `${sheet.eye_color || "neutral eyes"}, ${sheet.weight_range || "average build"}, ` +
+        `${sheet.chest_size || ""} ${sheet.hip_size || ""}, portrayed as a ${sheet.profession || "ordinary person"}.\n` +
+        "Waist-up framing, neutral but world-appropriate clothing, looking slightly toward the camera. " +
+        "Background softly hints at their world (but does not distract).\n";
+
+      const worldFlavor =
+        wTag === "western"
+          ? "Clothing and hairstyle fit an 1880s American frontier town. No modern fabrics or logos."
+          : wTag === "private_eye"
+          ? "Clothing and hairstyle fit a 1940s American city. No modern fabrics, haircuts, or accessories."
+          : wTag === "magical_school"
+          ? "Clothing fits a grounded magical boarding school: robe-like garments or academic attire with subtle mystical touches."
+          : "Clothing fits a present-day university campus: casual modern clothes, no futuristic elements.";
+
+      const prompt = `${basePrompt}${worldFlavor} ${GLOBAL_STYLE}`;
+
+      try {
+        const img = await openai("images/generations", {
+          model: "gpt-image-1",
+          prompt,
+          n: 1,
+          size: "1024x1024",
+          quality: "medium"
+        });
+
+        const b64 = img.data?.[0]?.b64_json;
+        if (!b64) return jsonErr("S601-CHAR", "No b64_json from player portrait generation");
+        const image_url = `data:image/png;base64,${b64}`;
+        return json200({ image_url });
+      } catch (e) {
+        return jsonErr("S601-CHAR", e.message || String(e));
+      }
+    }
+
     /* ---------- 2) identify clicked thing + options + NPC info ---------- */
 
     if (op === "identify_click") {
@@ -105,8 +172,6 @@ exports.handler = async (event) => {
       const y = Number.isFinite(body.y) ? body.y : null;
       const heldItemLabel = str(body.held_item_label);
       const priorPrompt = str(body.prior_prompt);
-      const worldTag = str(body.world_tag);
-      const npcs = Array.isArray(body.npcs) ? body.npcs : [];
 
       if (!marked || x === null || y === null) {
         return jsonErr("S201-ID", "Missing marked image or coordinates", 400);
@@ -120,16 +185,11 @@ exports.handler = async (event) => {
           "2) Decide whether this object is reasonably carryable by hand (true/false).\n" +
           "3) Propose 4 distinct ways the player could interact with that thing.\n" +
           "4) Decide if the clicked region is a specific human non-player character (NPC) and, if so, provide a consistent character entry.\n\n" +
-          "Use the world_tag and prior scene prompt to decide tone and genre. The world_tag describes the overall setting, such as:\n" +
-          "- magical_school\n" +
-          "- university\n" +
-          "- western\n" +
-          "- private_eye\n\n" +
-          "All interactions must be consistent with that world. Do NOT change era, technology level, or setting genre.\n" +
-          "In western, stay in 19th-century frontier style; in private_eye, stay in 1940s noir; in university, keep to contemporary realistic behavior; in magical_school, magic is allowed but visuals remain photographic.\n\n" +
+          "The player character is the person behind the camera; NPCs may react to their age, appearance, and profession in dialog.\n\n" +
+          "All interactions must remain consistent with the persistent world constraints you are given. DO NOT change era, technology level, or setting genre.\n" +
+          "In a western frontier town, stay in the 1800s; in private_eye, stay in the 1940s; in a modern university, stay contemporary; in a magical school, magic is allowed but visuals remain realistic.\n\n" +
           "By default, keep interactions realistic and non-magical.\n" +
-          "ONLY introduce overt magic or supernatural effects if the prior scene prompt clearly establishes a magical or supernatural setting\n" +
-          "(for example, mentions spells, enchantment, wizards, or a magical school). If it does not, stay grounded in everyday physics and social behavior.\n\n" +
+          "ONLY introduce overt magic or supernatural effects if the world/scene clearly supports magic (for example, magical_school with enchanted details).\n\n" +
           "If no held item is provided, options can be general (inspect, push, open, speak to someone, hand the object to someone, etc.).\n" +
           "If a held item is provided, options should describe using that item on the target.\n\n" +
           "For carryable objects:\n" +
@@ -155,11 +215,10 @@ exports.handler = async (event) => {
           "}";
 
         const userTextParts = [
+          worldText,
+          playerSheetText,
           `Canvas size is ${body?.canvas_size?.width || 768}x${body?.canvas_size?.height || 512}. Cursor at (${x},${y}).`,
         ];
-        if (worldTag) {
-          userTextParts.push(`World tag: ${worldTag}`);
-        }
         if (priorPrompt) {
           userTextParts.push(`Prior scene prompt (hyper-real style):\n${priorPrompt}`);
         }
@@ -233,8 +292,6 @@ exports.handler = async (event) => {
       const label = str(body.clicked_label) || "object";
       const action = str(body.interaction_choice) || "";
       const prior = str(body.prior_prompt) || ("A room, " + GLOBAL_STYLE);
-      const worldTag = str(body.world_tag);
-      const npcs = Array.isArray(body.npcs) ? body.npcs : [];
 
       try {
         const resp = await openai("responses", {
@@ -244,21 +301,18 @@ exports.handler = async (event) => {
               role: "system",
               content:
                 "You are the narrative and visual director for a point-and-click role-playing game.\n" +
-                "Given a prior scene prompt, a clicked object, a chosen interaction, a world_tag, and a list of NPC character sheets, you must:\n" +
+                "Given a prior scene prompt, a clicked object, a chosen interaction, persistent world constraints, a player-character sheet, and NPC character sheets, you must:\n" +
                 "1) Describe the immediate consequence of that choice and the new scene that unfolds.\n" +
                 "2) Produce a concrete image generation prompt for the new scene.\n\n" +
-                "The world_tag describes the overarching setting/genre (e.g., magical_school, university, western, private_eye).\n" +
-                "All scenes must remain consistent with this world: same historical era, technology level, and overall mood.\n" +
-                "Re-use important visual style cues from the prior scene prompt (lighting, camera style, color palette, and the explicitly hyper-real photographic style).\n" +
-                "Assume major characters and key objects remain visually recognizable across scenes unless there is a clear story reason to remove them.\n" +
-                "Do not change a recurring character’s age, gender, ethnicity, or general clothing style abruptly.\n\n" +
+                "All scenes must remain consistent with the world constraints: same historical era, technology level, clothing, and architecture. Never leave the established world.\n" +
+                "The player-character is behind the camera; NPCs may comment on their apparent age, build, gender presentation, and profession in reasonable ways.\n\n" +
                 "VISUAL STYLE CONSTRAINT:\n" +
                 "- Every image is a hyper-realistic photograph, 50mm lens, shallow depth of field, high dynamic range, natural cinematic lighting.\n" +
                 "- Never describe it as a painting, drawing, sketch, illustration, or 3D render.\n\n" +
                 "By default, keep events and visuals realistic and non-magical.\n" +
                 "ONLY introduce overt magic or supernatural effects if the world clearly supports magic (for example, magical_school).\n\n" +
                 "The narrative must be 2–3 short paragraphs, together roughly 120–220 words. No bullet points.\n" +
-                "The first paragraph should focus on the immediate outcome of the player’s choice.\n" +
+                "The first paragraph should focus on the immediate outcome of the player’s choice, including how nearby NPCs react (if relevant).\n" +
                 "The second (and optional third) paragraph should describe the new scene and how it feels to stand in it as the player.\n\n" +
                 "Respond with STRICT JSON ONLY:\n" +
                 "{\n" +
@@ -270,12 +324,13 @@ exports.handler = async (event) => {
             {
               role: "user",
               content:
-                (worldTag ? `World tag: ${worldTag}\n\n` : "") +
+                worldText +
                 (npcs.length
                   ? "NPC character sheets:\n" +
                     npcs.map(n => `- ${n.name}: ${n.summary || ""}`).join("\n") +
                     "\n\n"
                   : "") +
+                playerSheetText +
                 `Prior scene prompt (hyper-real photo style):\n${prior}\n\n` +
                 `The player clicked on: ${label}\n` +
                 (action ? `They chose to: ${action}\n\n` : "\n") +
@@ -285,15 +340,15 @@ exports.handler = async (event) => {
         });
 
         const parsed = extractJson(resp);
-        const next_prompt_raw = str(parsed.next_prompt).trim();
+        let next_prompt = str(parsed.next_prompt).trim();
         const story_raw = str(parsed.story).trim();
         const clicked_label_for_sprite = parsed.clicked_label_for_sprite;
 
-        let next_prompt =
-          next_prompt_raw ||
-          (prior +
-            ` Focus on the ${label} and the player action: ${action || "interact"}, preserving the same hyper-real photographic style.`);
-        // Ensure global style hint is present
+        if (!next_prompt) {
+          next_prompt =
+            prior +
+            ` Focus on the ${label} and the player action: ${action || "interact"}, preserving the same hyper-real photographic style and world constraints.`;
+        }
         if (!next_prompt.toLowerCase().includes("hyper-realistic")) {
           next_prompt += " " + GLOBAL_STYLE;
         }
@@ -353,8 +408,6 @@ exports.handler = async (event) => {
     if (op === "change_view") {
       const direction = str(body.direction) || "left";
       const prior = str(body.prior_prompt) || ("A room, " + GLOBAL_STYLE);
-      const worldTag = str(body.world_tag);
-      const npcs = Array.isArray(body.npcs) ? body.npcs : [];
 
       try {
         const resp = await openai("responses", {
@@ -364,11 +417,10 @@ exports.handler = async (event) => {
               role: "system",
               content:
                 "You are a visual director for a point-and-click role-playing game.\n" +
-                "Given a prior scene prompt, a view direction, a world_tag, and NPC character sheets, you must:\n" +
+                "Given a prior scene prompt, a view direction, persistent world constraints, a player-character sheet, and NPC character sheets, you must:\n" +
                 "1) Describe how the camera shifts (left/right/up/down/zoom out) while staying in the same location or immediate area.\n" +
                 "2) Produce a concrete image generation prompt for the new viewpoint.\n\n" +
-                "The world_tag describes the overarching setting/genre (e.g., magical_school, university, western, private_eye).\n" +
-                "All views must remain consistent with this world: same era, technology level, and overall mood.\n" +
+                "All views must remain consistent with the world: same era, technology level, clothing, and architecture.\n" +
                 "Re-use important visual style cues from the prior scene prompt (lighting, camera style, color palette) and maintain the explicitly hyper-real photographic look.\n" +
                 "If NPCs are likely still in frame from the new angle, keep them recognizable and consistent with their character sheets.\n\n" +
                 "VISUAL STYLE CONSTRAINT:\n" +
@@ -376,7 +428,7 @@ exports.handler = async (event) => {
                 "- Never describe it as a painting, drawing, sketch, illustration, or 3D render.\n\n" +
                 "By default, keep events and visuals realistic and non-magical, unless the world clearly supports magic (e.g., magical_school).\n\n" +
                 "The narrative must be 2–3 short paragraphs, together roughly 120–220 words. No bullet points.\n" +
-                "Focus on how it feels as the player slowly turns their gaze or pulls back, noticing new details that clearly belong to the same space.\n\n" +
+                "Focus on how it feels as the player slowly turns their gaze or pulls back, noticing new details that clearly belong to the same space and world.\n\n" +
                 "Respond with STRICT JSON ONLY:\n" +
                 "{\n" +
                 "  \"next_prompt\": \"visual prompt for the new image from this viewpoint (<= 60 words) that preserves style and world continuity\",\n" +
@@ -386,12 +438,13 @@ exports.handler = async (event) => {
             {
               role: "user",
               content:
-                (worldTag ? `World tag: ${worldTag}\n\n` : "") +
+                worldText +
                 (npcs.length
                   ? "NPC character sheets:\n" +
                     npcs.map(n => `- ${n.name}: ${n.summary || ""}`).join("\n") +
                     "\n\n"
                   : "") +
+                playerSheetText +
                 `Prior scene prompt (hyper-real photo style):\n${prior}\n\n` +
                 `The player chooses to look: ${direction}.\n` +
                 "Describe the new view and what is visible, then provide the image prompt in JSON."
@@ -400,13 +453,14 @@ exports.handler = async (event) => {
         });
 
         const parsed = extractJson(resp);
-        const next_prompt_raw = str(parsed.next_prompt).trim();
+        let next_prompt = str(parsed.next_prompt).trim();
         const story_raw = str(parsed.story).trim();
 
-        let next_prompt =
-          next_prompt_raw ||
-          (prior +
-            ` View shifted ${direction}, showing more of the surrounding area, in the same hyper-real photographic style.`);
+        if (!next_prompt) {
+          next_prompt =
+            prior +
+            ` View shifted ${direction}, showing more of the surrounding area, in the same hyper-real photographic style and within the same world constraints.`;
+        }
         if (!next_prompt.toLowerCase().includes("hyper-realistic")) {
           next_prompt += " " + GLOBAL_STYLE;
         }
@@ -420,7 +474,7 @@ exports.handler = async (event) => {
           prompt: next_prompt,
           n: 1,
           size: "1024x1024",
-          quality: "low"   // faster & cheaper for view shifts
+          quality: "low"
         });
 
         const b64 = img.data?.[0]?.b64_json;
