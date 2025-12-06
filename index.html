@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en">
-<head>
+head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>Point & Click MVP</title>
@@ -119,6 +119,43 @@
     strong {
       font-size: 0.85rem;
     }
+
+    /* Backpack grid */
+    #backpackGrid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 4px;
+      margin-top: 6px;
+    }
+    .backpack-slot {
+      width: 100%;
+      aspect-ratio: 1;
+      border-radius: 6px;
+      border: 1px solid #1f2937;
+      background: #020617;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.6rem;
+      cursor: pointer;
+      position: relative;
+    }
+    .backpack-slot.active {
+      border-color: #38bdf8;
+      box-shadow: 0 0 0 1px rgba(56,189,248,0.6);
+    }
+    .backpack-slot img {
+      max-width: 90%;
+      max-height: 90%;
+      object-fit: contain;
+      pointer-events: none;
+    }
+    .backpack-slot span {
+      text-align: center;
+      padding: 2px;
+      pointer-events: none;
+    }
+
     @media (max-width: 640px) {
       .wrap {
         padding: 12px 8px 24px;
@@ -138,6 +175,7 @@
     <div id="status">Ready</div>
 
     <div class="row">
+      <!-- Left: scene & choices -->
       <div class="col card">
         <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
           <button id="genBtn" class="btn">1) Generate image</button>
@@ -156,9 +194,17 @@
         <div id="choices"></div>
       </div>
 
-      <div class="col card" style="max-width: 360px;">
-        <strong>Console</strong>
-        <div id="log"></div>
+      <!-- Right: backpack + console -->
+      <div class="col">
+        <div class="card">
+          <strong>Backpack</strong>
+          <div id="backpackGrid"></div>
+        </div>
+
+        <div class="card" style="margin-top:8px; max-width: 360px;">
+          <strong>Console</strong>
+          <div id="log"></div>
+        </div>
       </div>
     </div>
   </div>
