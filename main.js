@@ -1,5 +1,6 @@
 /* main.js — Point & Click role-playing MVP
-   Hyper-real camera style + world retention + player character + NPC sheets */
+   Hyper-real camera style + world retention + player character + NPC sheets
+   + backpack + equip items on character portrait */
 
 const els = {
   genBtn: document.getElementById("genBtn"),
@@ -33,6 +34,9 @@ const els = {
   charAcceptBtn: document.getElementById("charAcceptBtn"),
   playerPortrait: document.getElementById("playerPortrait"),
   playerHint: document.getElementById("playerHint"),
+  portraitWrapper: document.getElementById("portraitWrapper"),
+  portraitMarker: document.getElementById("portraitMarker"),
+  equipBtn: document.getElementById("equipBtn"),
 };
 const ctx = els.canvas.getContext("2d");
 
@@ -80,13 +84,17 @@ let activeSlotIndex = 0;
 let npcMap = {};
 
 // ---- Player character state ----
-let playerCharacter = null; // { age_range, sex, weight_range, chest_size, hip_size, hair_style, hair_color, eye_color, profession }
+let playerCharacter = null; // sheet object
 let playerReady = false;
+
+// ---- Equip-on-character state ----
+let equipClick = null;      // { nx, ny } last click on portrait
+let equippedItems = [];     // labels currently considered equipped
 
 // ---- Game state ----
 let current = {
   prompt: SCENE_PROMPTS.magical_school,
-  worldTag: "magical_school", // tracks world/genre
+  worldTag: "magical_school",
   imageUrl: "",
   clicked: null,
   labeled: "",
@@ -167,10 +175,10 @@ function onBackpackSlotClick(i) {
     els.hud.textContent =
       "You switch to the simple cursor.\nClick in the scene to choose a point, then confirm.";
   } else {
-    setStatus(`Using item: ${backpack[i].label}. Click the scene, then confirm.`);
+    setStatus(`Using item: ${backpack[i].label}. Click the scene or your portrait, then confirm/equip.`);
     els.hud.textContent =
       `You ready the ${backpack[i].label} from your backpack.\n` +
-      `Click in the scene where you want to use it, then confirm.`;
+      `Click in the scene to use it there, or click your character portrait to try equipping it.`;
   }
 }
 
@@ -269,6 +277,7 @@ async function generatePlayerPortrait(isRandom) {
     const resp = await postJSON("/.netlify/functions/openai", {
       op: "gen_player_portrait",
       world_tag: worldTag,
+      world_description: WORLD_DESCRIPTIONS[worldTag],
       player_character: sheet,
     });
 
@@ -282,6 +291,12 @@ async function generatePlayerPortrait(isRandom) {
     els.playerHint.textContent =
       "Portrait generated. If you like this character, click “Use this character”. Otherwise, tweak options or randomize again.";
     els.charAcceptBtn.disabled = false;
+
+    // reset equip state
+    equippedItems = [];
+    equipClick = null;
+    els.portraitMarker.style.display = "none";
+    els.equipBtn.disabled = true;
 
     setStatus("Portrait ready. Accept to enter the world.");
   } catch (e) {
@@ -399,7 +414,7 @@ async function drawImageToCanvas(url) {
   });
 }
 
-/* ---------------- Step 3: on click, record coords ---------------- */
+/* ---------------- Step 3: on scene click, record coords ---------------- */
 
 async function onCanvasClick(evt) {
   if (!current.imageUrl) {
@@ -422,7 +437,7 @@ async function onCanvasClick(evt) {
   if (activeTool && activeTool.type === "item") {
     setStatus(`Using ${activeTool.label} at (${x}, ${y}) – press confirm.`);
     els.hud.textContent =
-      `You ready the ${activeTool.label} and focus it on (${x}, ${y}).\n\n` +
+      `You ready the ${activeTool.label} and focus it on the scene at (${x}, ${y}).\n\n` +
       "Press “4) Confirm selection” to see how the scene responds to this action.";
   } else {
     setStatus(`Selection at (${x}, ${y}) – press confirm.`);
@@ -439,6 +454,40 @@ async function onCanvasClick(evt) {
     log("E131-CURSOR: " + String(e));
     els.confirmBtn.disabled = true;
   }
+}
+
+/* ---------------- Portrait click: choose equip spot ---------------- */
+
+function onPortraitClick(evt) {
+  if (!playerCharacter || !els.playerPortrait.src) {
+    setStatus("Generate and accept a character first.");
+    return;
+  }
+
+  const active = backpack[activeSlotIndex];
+  if (!active || active.type !== "item") {
+    setStatus("Select an item from the backpack to equip first.");
+    els.playerHint.textContent =
+      "To equip something, click a backpack item (not the cursor) and then click on your character.";
+    return;
+  }
+
+  const rect = els.portraitWrapper.getBoundingClientRect();
+  const nx = (evt.clientX - rect.left) / rect.width;
+  const ny = (evt.clientY - rect.top) / rect.height;
+  equipClick = { nx, ny };
+
+  // show marker
+  els.portraitMarker.style.display = "block";
+  els.portraitMarker.style.left = (nx * 100) + "%";
+  els.portraitMarker.style.top = (ny * 100) + "%";
+
+  els.equipBtn.disabled = false;
+
+  setStatus(`Equip ${active.label} at this spot on your character, then click “Equip selected item on character”.`);
+  els.playerHint.textContent =
+    `You marked a spot on your character for the ${active.label}. ` +
+    `Click “Equip selected item on character” to try putting it there.`;
 }
 
 /* ---------------- Draw cursor ---------------- */
@@ -652,6 +701,82 @@ function disableChoiceButtons(disabled) {
   buttons.forEach(b => b.disabled = disabled);
 }
 
+/* ---------------- Equip: send to backend ---------------- */
+
+async function onEquipItem() {
+  const active = backpack[activeSlotIndex];
+  if (!active || active.type !== "item") {
+    setStatus("Select an item from the backpack first.");
+    return;
+  }
+  if (!playerCharacter || !els.playerPortrait.src) {
+    setStatus("Generate and accept a character first.");
+    return;
+  }
+  if (!equipClick) {
+    setStatus("Click on the character portrait to choose where to equip the item.");
+    return;
+  }
+
+  try {
+    setStatus("Trying to equip item on your character…");
+    els.equipBtn.disabled = true;
+
+    const resp = await postJSON("/.netlify/functions/openai", {
+      op: "equip_item_on_character",
+      world_tag: current.worldTag,
+      world_description: WORLD_DESCRIPTIONS[current.worldTag],
+      player_character: playerCharacter,
+      current_portrait_url: els.playerPortrait.src,
+      item_label: active.label,
+      click: equipClick,
+      equipped_items: equippedItems,
+    });
+
+    if (!resp) throw new Error("E701-EQUIP: Empty response");
+
+    if (!resp.equip_success) {
+      const reason = resp.reason || "Item could not be equipped.";
+      setStatus("Equip failed.");
+      els.playerHint.textContent = `Equip failed: ${reason}`;
+      log(`Equip failed for ${active.label}: ${reason}`);
+      return;
+    }
+
+    if (!resp.image_url) throw new Error("E701-EQUIP: Missing image_url from server");
+
+    // success – update portrait and item state
+    els.playerPortrait.src = resp.image_url;
+    log(`Equipped ${active.label} on character.`);
+    els.playerHint.textContent =
+      `The ${active.label} is now equipped on your character. Click on them again to place more items.`;
+
+    equippedItems.push(active.label);
+
+    if (resp.replaced_item_label) {
+      const rep = resp.replaced_item_label;
+      equippedItems = equippedItems.filter(l => l !== rep);
+      addToBackpack(rep, null);
+      log(`Replaced item: ${rep} (added to backpack).`);
+    }
+
+    // remove equipped item from backpack and reset selection
+    backpack[activeSlotIndex] = null;
+    activeSlotIndex = 0;
+    renderBackpack();
+
+    // clear marker
+    equipClick = null;
+    els.portraitMarker.style.display = "none";
+    els.equipBtn.disabled = true;
+
+    setStatus("Item equipped. Select another item or continue exploring scenes.");
+  } catch (e) {
+    setStatus("Error equipping item.");
+    log(String(e));
+  }
+}
+
 /* ---------------- Camera / view navigation ---------------- */
 
 async function onChangeView(direction) {
@@ -734,9 +859,10 @@ function renderChoices() {
 els.genBtn.onclick = generateImage;
 els.confirmBtn.onclick = onConfirmSelection;
 els.resetBtn.onclick = () => {
+  const w = els.sceneSelect.value || "magical_school";
   current = {
-    prompt: SCENE_PROMPTS[els.sceneSelect.value] || SCENE_PROMPTS.magical_school,
-    worldTag: els.sceneSelect.value || "magical_school",
+    prompt: SCENE_PROMPTS[w] || SCENE_PROMPTS.magical_school,
+    worldTag: w,
     imageUrl: "",
     clicked: null,
     labeled: "",
@@ -755,6 +881,11 @@ els.resetBtn.onclick = () => {
   els.charAcceptBtn.disabled = true;
   els.genBtn.disabled = true;
 
+  equippedItems = [];
+  equipClick = null;
+  els.portraitMarker.style.display = "none";
+  els.equipBtn.disabled = true;
+
   ctx.clearRect(0,0,W,H);
   clearLog();
   renderBackpack();
@@ -764,6 +895,7 @@ els.resetBtn.onclick = () => {
 };
 
 els.canvas.addEventListener("click", onCanvasClick);
+els.portraitWrapper.addEventListener("click", onPortraitClick);
 els.viewLeftBtn.onclick = () => onChangeView("left");
 els.viewRightBtn.onclick = () => onChangeView("right");
 els.viewUpBtn.onclick = () => onChangeView("up");
@@ -774,6 +906,7 @@ els.viewZoomOutBtn.onclick = () => onChangeView("zoom_out");
 els.charGenBtn.onclick = () => generatePlayerPortrait(false);
 els.charRandomBtn.onclick = () => generatePlayerPortrait(true);
 els.charAcceptBtn.onclick = acceptPlayerCharacter;
+els.equipBtn.onclick = onEquipItem;
 
 // Initial render
 renderBackpack();
