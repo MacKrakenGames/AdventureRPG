@@ -181,19 +181,40 @@
       padding: 2px;
       pointer-events: none;
     }
+
+    #portraitWrapper {
+      position: relative;
+      width: 100%;
+      max-height: 360px;
+      overflow: hidden;
+      margin-top: 4px;
+    }
     #playerPortrait {
       width: 100%;
       border-radius: 8px;
       border: 1px solid #1f2937;
-      object-fit: contain;
+      object-fit: contain;         /* show full body */
       max-height: 360px;
       background:#020617;
+    }
+    #portraitMarker {
+      position: absolute;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      border: 2px solid #38bdf8;
+      box-shadow: 0 0 0 1px rgba(15,23,42,0.9);
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      display: none;
+      background: rgba(15,23,42,0.4);
     }
     #playerHint {
       font-size:0.75rem;
       margin-top:4px;
       opacity:0.8;
     }
+
     @media (max-width: 640px) {
       .wrap {
         padding: 12px 8px 24px;
@@ -365,14 +386,21 @@
             </label>
           </div>
 
-          <div style="display:flex; gap:6px; flex-wrap:wrap; margin:6px 0;">
+          <div class="field-row" style="margin:6px 0;">
             <button id="charGenBtn" class="btn">Generate portrait</button>
             <button id="charRandomBtn" class="btn">Random character</button>
             <button id="charAcceptBtn" class="btn" disabled>Use this character</button>
           </div>
 
-          <img id="playerPortrait" alt="Player portrait preview"/>
+          <div id="portraitWrapper">
+            <img id="playerPortrait" alt="Player portrait preview"/>
+            <div id="portraitMarker"></div>
+          </div>
           <div id="playerHint">No portrait yet. Generate or randomize to see your character.</div>
+
+          <button id="equipBtn" class="btn" style="margin-top:6px; width:100%;" disabled>
+            Equip selected item on character
+          </button>
         </div>
 
         <!-- Backpack -->
