@@ -1,5 +1,4 @@
-// netlify/functions/openai.js — Minimal API for MVP + distinct error codes per step
-// FIXED: gpt-image-1 uses /images/generations and returns base64, not URL.
+// netlify/functions/openai.js — API for point & click MVP + interaction choices
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
@@ -43,6 +42,17 @@ function getOutputText(resp){
 }
 function str(v){ return typeof v === "string" ? v : ""; }
 
+// Extract JSON from model output robustly
+function extractJson(resp) {
+  const s = getOutputText(resp) || "";
+  try { return JSON.parse(s); } catch {}
+  const m = s.match(/\{[\s\S]*\}/);
+  if (m) {
+    try { return JSON.parse(m[0]); } catch {}
+  }
+  throw new Error("JSON parse failed");
+}
+
 // ---- handlers ----
 exports.handler = async (event) => {
   try {
@@ -55,18 +65,16 @@ exports.handler = async (event) => {
 
     const op = body.op;
 
-    // 1) Generate initial image — client error code: E101-GEN; server code here: S101-GEN
+    // 1) Generate initial image — client error code: E101-GEN; server: S101-GEN
     if (op === "gen_image") {
       const prompt = str(body.prompt) || "A table with assorted objects, photoreal, studio lighting";
       try {
-        // gpt-image-1: use /images/generations and read data[0].b64_json
         const img = await openai("images/generations", {
           model: "gpt-image-1",
           prompt,
           n: 1,
           size: "1024x1024",
-          quality: "low"
-          // For gpt-image-1, response_format is always base64; no need to specify
+          quality: "medium"   // <--- medium quality
         });
 
         const b64 = img.data?.[0]?.b64_json;
@@ -78,10 +86,10 @@ exports.handler = async (event) => {
       }
     }
 
-    // 2) Identify clicked thing using the cursor-marked image — client: E201-ID; server: S201-ID
+    // 2) Identify clicked thing and propose 4 interaction options
+    //    Client code: E201-ID; server code: S201-ID
     if (op === "identify_click") {
       const marked = str(body.marked_image_data_url);
-      const original = str(body.original_url); // not strictly needed, but kept for future use
       const x = Number.isFinite(body.x) ? body.x : null;
       const y = Number.isFinite(body.y) ? body.y : null;
 
@@ -91,8 +99,14 @@ exports.handler = async (event) => {
 
       try {
         const sys =
-          "You are a precise vision assistant. You will receive an image that already has a bright cursor/crosshair drawn on it. " +
-          "Your task: say what object or region the cursor is on (or closest to) in 3 words or fewer. Return ONLY the noun phrase.";
+          "You are a precise vision assistant for a point-and-click adventure game.\n" +
+          "You will see an image with a bright cursor/crosshair. Your tasks:\n" +
+          "1) Name the object or region under (or closest to) the cursor with a short noun phrase (<= 3 words).\n" +
+          "2) Propose 4 distinct ways the player could interact with that thing.\n\n" +
+          "Respond with STRICT JSON ONLY in this form:\n" +
+          "{ \"label\": \"short noun phrase\",\n" +
+          "  \"options\": [\"option 1\", \"option 2\", \"option 3\", \"option 4\"] }\n" +
+          "Each option should be a short imperative phrase (e.g., \"Pick up the key\").";
 
         const resp = await openai("responses", {
           model: "gpt-4o",
@@ -103,11 +117,13 @@ exports.handler = async (event) => {
               content: [
                 {
                   type: "input_text",
-                  text: `The canvas size is ${body?.canvas_size?.width || 768}x${body?.canvas_size?.height || 512}. Cursor at (${x},${y}).`
+                  text:
+                    `Canvas size is ${body?.canvas_size?.width || 768}x${body?.canvas_size?.height || 512}. ` +
+                    `Cursor at (${x},${y}).`
                 },
                 {
                   type: "input_text",
-                  text: "Answer with a short noun phrase only (<= 3 words)."
+                  text: "Return JSON only; no explanation."
                 },
                 {
                   type: "input_image",
@@ -118,48 +134,65 @@ exports.handler = async (event) => {
           ]
         });
 
-        const label = getOutputText(resp).trim().replace(/^["']|["']$/g, "");
-        if (!label) return jsonErr("S201-ID", "Empty label");
-        return json200({ label });
+        const parsed = extractJson(resp);
+        const label = str(parsed.label).trim();
+        const options = Array.isArray(parsed.options)
+          ? parsed.options.slice(0, 4).map(o => str(o).trim()).filter(Boolean)
+          : [];
+
+        if (!label) return jsonErr("S201-ID", "Missing label from model");
+        if (options.length !== 4) return jsonErr("S201-ID", "Expected 4 options from model");
+
+        return json200({ label, options });
       } catch (e) {
         return jsonErr("S201-ID", e.message || String(e));
       }
     }
 
-    // 3) Generate a follow-up image based on the clicked label — client: E301-FOLLOW; server: S301-FOLLOW
+    // 3) Generate a follow-up image based on the clicked label + chosen option
+    //    Client: E301-FOLLOW; server: S301-FOLLOW
     if (op === "gen_followup_image") {
       const label = str(body.clicked_label) || "object";
+      const action = str(body.interaction_choice) || "";
       const prior = str(body.prior_prompt) || "A table with assorted objects, photoreal";
 
       try {
-        // Ask text model to craft the next prompt
+        // Prompt rewrite using gpt-4o-mini
         const comp = await openai("responses", {
           model: "gpt-4o-mini",
           input: [
             {
               role: "system",
               content:
-                "You write concise, concrete image prompts. Return only the prompt text. " +
-                "Avoid camera jargon; describe content and composition clearly."
+                "You write concise, concrete image prompts for a visual adventure game.\n" +
+                "- Return ONLY the prompt text, nothing else.\n" +
+                "- Keep it under 60 words.\n" +
+                "- Avoid camera jargon; describe content and composition.\n" +
+                "- Make the new scene clearly related to the prior scene and focused on the clicked object and chosen action."
             },
             {
               role: "user",
               content:
-                `Prior scene prompt:\n${prior}\n\nUser clicked: ${label}\n` +
-                "Write a new prompt that focuses on the clicked thing being interacted with meaningfully (subtle change). Return prompt only."
+                `Prior scene prompt:\n${prior}\n\n` +
+                `The player clicked on: ${label}\n` +
+                (action ? `They chose to: ${action}\n` : "") +
+                "Write a new prompt that visually shows the consequence of this interaction."
             }
           ]
         });
 
-        const next_prompt = getOutputText(comp).trim();
+        const next_prompt_raw = getOutputText(comp).trim();
+        const next_prompt =
+          next_prompt_raw ||
+          (prior + ` Focus on the ${label} and the player action: ${action || "interact"}.`);
 
-        // Generate the follow-up image with gpt-image-1 (again base64-only)
+        // Follow-up image at valid size + medium quality
         const img = await openai("images/generations", {
           model: "gpt-image-1",
-          prompt: next_prompt || `A closer view focusing on the ${label}`,
+          prompt: next_prompt,
           n: 1,
           size: "1024x1024",
-          quality: "low"
+          quality: "medium"
         });
 
         const b64 = img.data?.[0]?.b64_json;
@@ -178,5 +211,3 @@ exports.handler = async (event) => {
     return jsonErr("S000-UNCAUGHT", err.message || String(err), 500);
   }
 };
-
-
