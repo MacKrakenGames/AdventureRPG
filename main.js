@@ -1,4 +1,5 @@
-/* main.js — Point & Click MVP with role-playing, backpack, camera navigation, and world continuity */
+/* main.js — Point & Click role-playing MVP
+   Hyper-real camera style + backpack + camera navigation + NPC character sheets */
 
 const els = {
   genBtn: document.getElementById("genBtn"),
@@ -22,28 +23,39 @@ const ctx = els.canvas.getContext("2d");
 // Logical pixel coordinate system (canvas)
 const W = 768, H = 512;
 
-// Scene templates (these define the world theme/style)
+// ---- Scene templates (each is hyper-real, camera-quality) ----
+const BASE_STYLE =
+  "hyper-realistic photograph, 50mm lens, shallow depth of field, high dynamic range, natural cinematic lighting, camera-quality image, not a painting, not a drawing, not an illustration.";
+
 const SCENE_PROMPTS = {
   magical_school:
-    "An enchanted boarding school corridor at night, floating candles, portraits whispering, arched stone windows, warm torchlight, cinematic, richly detailed, fantasy illustration.",
+    "Hyper-realistic photo of an enchanted boarding school corridor at night, floating candles, portraits whispering, arched stone windows, warm torchlight, students in robes, " +
+    BASE_STYLE,
   university:
-    "A modern university campus quad at dusk, students walking with backpacks, old brick buildings and trees, soft golden hour light, cinematic wide shot, realistic, subtle film grain.",
+    "Hyper-realistic photo of a modern university campus quad at dusk, students with backpacks walking and talking, old brick buildings and large trees, soft golden hour light, subtle film grain, " +
+    BASE_STYLE,
   western:
-    "A dusty main street of an 1880s western frontier town at high noon, wooden saloon, hitching posts, horses, sun-bleached signs, mountains in the distance, cinematic western film frame, warm earthy color palette, shallow depth of field.",
+    "Hyper-realistic photo of a dusty main street of an 1880s western frontier town at high noon, wooden saloon, hitching posts, horses, sun-bleached signs, distant mountains, warm earthy color palette, " +
+    BASE_STYLE,
   private_eye:
-    "A cramped 1940s private investigator's office at night, venetian blinds casting shadows, desk lamp, cluttered desk with files, city lights through the window, cinematic noir, moody lighting, muted colors, film noir style."
+    "Hyper-realistic photo of a cramped 1940s private investigator's office at night, venetian blinds casting sharp shadows, desk lamp, cluttered desk with files and whiskey glass, city lights through the window, noir mood, " +
+    BASE_STYLE,
 };
 
-// Backpack state
+// ---- Backpack state ----
 const BACKPACK_SLOTS = 32;
 let backpack = new Array(BACKPACK_SLOTS).fill(null);
 backpack[0] = { type: "cursor", label: "Cursor", spriteUrl: null };
 let activeSlotIndex = 0;
 
-// Game state
+// ---- NPC registry (experimental character sheets) ----
+// npcMap: { [name: string]: { name, summary } }
+let npcMap = {};
+
+// ---- Game state ----
 let current = {
   prompt: SCENE_PROMPTS.magical_school,
-  worldTag: "magical_school", // tracks overall world/genre
+  worldTag: "magical_school", // tracks world/genre
   imageUrl: "",
   clicked: null,
   labeled: "",
@@ -82,7 +94,7 @@ async function postJSON(url, body) {
   return data;
 }
 
-/* -------- Backpack helpers -------- */
+/* ---------------- Backpack helpers ---------------- */
 
 function renderBackpack() {
   els.backpackGrid.innerHTML = "";
@@ -151,7 +163,32 @@ function setViewButtonsDisabled(disabled) {
   els.viewZoomOutBtn.disabled = disabled;
 }
 
-/* -------- Step 1: generate base scene -------- */
+/* ---------------- NPC helpers ---------------- */
+
+function upsertNpc(name, summary) {
+  const trimmedName = (name || "").trim();
+  if (!trimmedName) return;
+  const trimmedSummary = (summary || "").trim();
+
+  if (!npcMap[trimmedName]) {
+    npcMap[trimmedName] = { name: trimmedName, summary: trimmedSummary };
+  } else if (trimmedSummary && trimmedSummary.length > npcMap[trimmedName].summary.length) {
+    // Prefer the longer, presumably richer description
+    npcMap[trimmedName].summary = trimmedSummary;
+  }
+
+  // Cap at 4 NPCs: drop the oldest key if we exceed
+  const names = Object.keys(npcMap);
+  if (names.length > 4) {
+    delete npcMap[names[0]];
+  }
+}
+
+function getNpcArray() {
+  return Object.values(npcMap);
+}
+
+/* ---------------- Step 1: generate base scene ---------------- */
 
 async function generateImage() {
   try {
@@ -181,7 +218,7 @@ async function generateImage() {
     current.imageUrl = out.image_url;
 
     els.hud.textContent =
-      "You step into a new scene.\n\n" +
+      "You step into a new hyper-real scene.\n\n" +
       "Click anywhere in the image to pick a point of interest, then press “2) Confirm selection” " +
       "to explore what that part of the scene represents.";
 
@@ -196,7 +233,7 @@ async function generateImage() {
   }
 }
 
-/* -------- Draw image into canvas -------- */
+/* ---------------- Draw image into canvas ---------------- */
 
 async function drawImageToCanvas(url) {
   return new Promise((resolve, reject) => {
@@ -234,7 +271,7 @@ async function drawImageToCanvas(url) {
   });
 }
 
-/* -------- Step 3: on click, record coords -------- */
+/* ---------------- Step 3: on click, record coords ---------------- */
 
 async function onCanvasClick(evt) {
   if (!current.imageUrl) {
@@ -276,7 +313,7 @@ async function onCanvasClick(evt) {
   }
 }
 
-/* -------- Draw cursor -------- */
+/* ---------------- Draw cursor ---------------- */
 
 function drawCursor(x, y) {
   const R = 6;
@@ -310,7 +347,7 @@ async function redrawImageWithCursor(x, y) {
   drawCursor(x, y);
 }
 
-/* -------- Step 5: confirm selection → identify + options -------- */
+/* ---------------- Step 5: confirm selection → identify + options ---------------- */
 
 async function onConfirmSelection() {
   if (!current.imageUrl) {
@@ -348,7 +385,8 @@ async function onConfirmSelection() {
       canvas_size: { width: W, height: H },
       held_item_label: heldItemLabel,
       prior_prompt: current.prompt,
-      world_tag: current.worldTag
+      world_tag: current.worldTag,
+      npcs: getNpcArray(),
     }).catch(e => { throw new Error("E201-ID: " + String(e)); });
 
     if (!idResp.label) throw new Error("E201-ID: No label from vision");
@@ -361,6 +399,12 @@ async function onConfirmSelection() {
     current.carryable = !!idResp.carryable;
     current.stowOptionIndex =
       Number.isInteger(idResp.stow_option_index) ? idResp.stow_option_index : null;
+
+    // Experimental NPC: if this selection is a character, store/update their sheet
+    if (idResp.is_character && idResp.character_name) {
+      upsertNpc(idResp.character_name, idResp.character_summary || "");
+      log(`NPC updated: ${idResp.character_name}`);
+    }
 
     log(`Identified selection as: "${current.labeled}"`);
     log("Options:\n - " + current.options.join("\n - "));
@@ -386,7 +430,7 @@ async function onConfirmSelection() {
   }
 }
 
-/* -------- Step 6: choose option → new scene + story -------- */
+/* ---------------- Step 6: choose option → new scene + story ---------------- */
 
 async function onChooseOption(index) {
   if (!current.labeled) {
@@ -416,7 +460,8 @@ async function onChooseOption(index) {
       clicked_label: current.labeled,
       interaction_choice: optionText,
       prior_prompt: current.prompt,
-      world_tag: current.worldTag
+      world_tag: current.worldTag,
+      npcs: getNpcArray(),
     }).catch(e => { throw new Error("E301-FOLLOW: " + String(e)); });
 
     if (!follow.image_url) throw new Error("E301-FOLLOW: Missing image_url");
@@ -476,7 +521,7 @@ function disableChoiceButtons(disabled) {
   buttons.forEach(b => b.disabled = disabled);
 }
 
-/* -------- Camera / view navigation -------- */
+/* ---------------- Camera / view navigation ---------------- */
 
 async function onChangeView(direction) {
   if (!current.prompt || !current.imageUrl) {
@@ -495,7 +540,8 @@ async function onChangeView(direction) {
       op: "change_view",
       direction,
       prior_prompt: current.prompt,
-      world_tag: current.worldTag
+      world_tag: current.worldTag,
+      npcs: getNpcArray(),
     }).catch(e => { throw new Error("E501-VIEW: " + String(e)); });
 
     if (!resp.image_url) throw new Error("E501-VIEW: Missing image_url");
@@ -531,7 +577,7 @@ async function onChangeView(direction) {
   }
 }
 
-/* -------- render choices -------- */
+/* ---------------- render choices ---------------- */
 
 function renderChoices() {
   els.choices.innerHTML = "";
@@ -550,7 +596,7 @@ function renderChoices() {
   });
 }
 
-/* -------- wiring -------- */
+/* ---------------- wiring ---------------- */
 
 els.genBtn.onclick = generateImage;
 els.confirmBtn.onclick = onConfirmSelection;
@@ -568,6 +614,7 @@ els.resetBtn.onclick = () => {
   backpack = new Array(BACKPACK_SLOTS).fill(null);
   backpack[0] = { type: "cursor", label: "Cursor", spriteUrl: null };
   activeSlotIndex = 0;
+  npcMap = {};
   ctx.clearRect(0,0,W,H);
   clearLog();
   renderBackpack();
