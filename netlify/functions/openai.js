@@ -128,7 +128,7 @@ exports.handler = async (event) => {
       const wTag = worldTag || "university";
       const sheet = playerCharacter || {};
       const basePrompt =
-        `Hyper-realistic full-body portrait photograph of a ${sheet.age_range || "adult"} ${sheet.sex || "person"} ` +
+        `Hyper-realistic full-body, the entire head and feet visible, portrait photograph of a ${sheet.age_range || "adult"} ${sheet.sex || "person"} ` +
         `with ${sheet.hair_style || "short hair"} and ${sheet.hair_color || "brown hair"}, ` +
         `${sheet.eye_color || "neutral eyes"}, ${sheet.weight_range || "average build"}, ` +
         `${sheet.chest_size || ""} ${sheet.hip_size || ""}, portrayed as a ${sheet.profession || "ordinary person"}.\n` +
