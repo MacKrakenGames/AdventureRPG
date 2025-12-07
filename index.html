@@ -8,9 +8,7 @@
     :root {
       color-scheme: dark;
     }
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
     html, body {
       margin: 0;
       padding: 0;
@@ -69,9 +67,7 @@
       align-items: center;
       gap: 4px;
     }
-    .btn:hover:not(:disabled) {
-      background: #1f2937;
-    }
+    .btn:hover:not(:disabled) { background: #1f2937; }
     .btn:disabled {
       opacity: 0.5;
       cursor: not-allowed;
@@ -144,9 +140,7 @@
       overflow-y: auto;
       margin-top: 6px;
     }
-    strong {
-      font-size: 0.85rem;
-    }
+    strong { font-size: 0.85rem; }
     #backpackGrid {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
@@ -193,7 +187,7 @@
       width: 100%;
       border-radius: 8px;
       border: 1px solid #1f2937;
-      object-fit: contain;         /* show full body */
+      object-fit: contain;
       max-height: 360px;
       background:#020617;
     }
@@ -216,15 +210,9 @@
     }
 
     @media (max-width: 640px) {
-      .wrap {
-        padding: 12px 8px 24px;
-      }
-      .row {
-        flex-direction: column;
-      }
-      #log {
-        max-height: 160px;
-      }
+      .wrap { padding: 12px 8px 24px; }
+      .row { flex-direction: column; }
+      #log { max-height: 160px; }
     }
   </style>
 </head>
@@ -286,111 +274,114 @@
           <h2>Player character</h2>
           <div class="subheading">Define your character, then generate a portrait. You can randomize until you like it.</div>
 
-          <div class="field-row">
-            <label>
-              Age range
-              <select id="charAge">
-                <option value="late teens">late teens</option>
-                <option value="early twenties">early twenties</option>
-                <option value="late twenties">late twenties</option>
-                <option value="thirties">thirties</option>
-                <option value="forties">forties</option>
-              </select>
-            </label>
-            <label>
-              Sex
-              <select id="charSex">
-                <option value="woman">woman</option>
-                <option value="man">man</option>
-              </select>
-            </label>
-          </div>
+          <!-- WRAPPED so we can hide after character chosen -->
+          <div id="charControls">
+            <div class="field-row">
+              <label>
+                Age range
+                <select id="charAge">
+                  <option value="late teens">late teens</option>
+                  <option value="early twenties">early twenties</option>
+                  <option value="late twenties">late twenties</option>
+                  <option value="thirties">thirties</option>
+                  <option value="forties">forties</option>
+                </select>
+              </label>
+              <label>
+                Sex
+                <select id="charSex">
+                  <option value="woman">woman</option>
+                  <option value="man">man</option>
+                </select>
+              </label>
+            </div>
 
-          <div class="field-row">
-            <label>
-              Weight build
-              <select id="charWeight">
-                <option value="slender">slender</option>
-                <option value="average build">average build</option>
-                <option value="athletic">athletic</option>
-                <option value="heavyset">heavyset</option>
-              </select>
-            </label>
-            <label>
-              Chest size
-              <select id="charChest">
-                <option value="flat chest">flat</option>
-                <option value="small chest">small</option>
-                <option value="medium chest">medium</option>
-                <option value="large chest">large</option>
-              </select>
-            </label>
-            <label>
-              Hip size
-              <select id="charHips">
-                <option value="narrow hips">narrow</option>
-                <option value="average hips">average</option>
-                <option value="wide hips">wide</option>
-              </select>
-            </label>
-          </div>
+            <div class="field-row">
+              <label>
+                Weight build
+                <select id="charWeight">
+                  <option value="slender">slender</option>
+                  <option value="average build">average build</option>
+                  <option value="athletic">athletic</option>
+                  <option value="heavyset">heavyset</option>
+                </select>
+              </label>
+              <label>
+                Chest size
+                <select id="charChest">
+                  <option value="flat chest">flat</option>
+                  <option value="small chest">small</option>
+                  <option value="medium chest">medium</option>
+                  <option value="large chest">large</option>
+                </select>
+              </label>
+              <label>
+                Hip size
+                <select id="charHips">
+                  <option value="narrow hips">narrow</option>
+                  <option value="average hips">average</option>
+                  <option value="wide hips">wide</option>
+                </select>
+              </label>
+            </div>
 
-          <div class="field-row">
-            <label>
-              Hair style
-              <select id="charHairStyle">
-                <option value="short hair">short</option>
-                <option value="medium-length hair">medium</option>
-                <option value="long hair">long</option>
-                <option value="curly hair">curly</option>
-                <option value="pulled into a ponytail">ponytail</option>
-                <option value="tied up in a bun">bun</option>
-              </select>
-            </label>
-            <label>
-              Hair color
-              <select id="charHairColor">
-                <option value="dark brown hair">dark brown</option>
-                <option value="black hair">black</option>
-                <option value="blond hair">blond</option>
-                <option value="red hair">red</option>
-                <option value="light brown hair">light brown</option>
-                <option value="gray hair">gray</option>
-              </select>
-            </label>
-            <label>
-              Eye color
-              <select id="charEyes">
-                <option value="brown eyes">brown</option>
-                <option value="blue eyes">blue</option>
-                <option value="green eyes">green</option>
-                <option value="hazel eyes">hazel</option>
-                <option value="gray eyes">gray</option>
-              </select>
-            </label>
-          </div>
+            <div class="field-row">
+              <label>
+                Hair style
+                <select id="charHairStyle">
+                  <option value="short hair">short</option>
+                  <option value="medium-length hair">medium</option>
+                  <option value="long hair">long</option>
+                  <option value="curly hair">curly</option>
+                  <option value="pulled into a ponytail">ponytail</option>
+                  <option value="tied up in a bun">bun</option>
+                </select>
+              </label>
+              <label>
+                Hair color
+                <select id="charHairColor">
+                  <option value="dark brown hair">dark brown</option>
+                  <option value="black hair">black</option>
+                  <option value="blond hair">blond</option>
+                  <option value="red hair">red</option>
+                  <option value="light brown hair">light brown</option>
+                  <option value="gray hair">gray</option>
+                </select>
+              </label>
+              <label>
+                Eye color
+                <select id="charEyes">
+                  <option value="brown eyes">brown</option>
+                  <option value="blue eyes">blue</option>
+                  <option value="green eyes">green</option>
+                  <option value="hazel eyes">hazel</option>
+                  <option value="gray eyes">gray</option>
+                </select>
+              </label>
+            </div>
 
-          <div class="field-row">
-            <label style="flex:1 1 100%;">
-              Profession
-              <select id="charProfession">
-                <option value="student">student</option>
-                <option value="researcher">researcher</option>
-                <option value="sheriff">sheriff</option>
-                <option value="bartender">bartender</option>
-                <option value="private investigator">private investigator</option>
-                <option value="magic student">magic student</option>
-                <option value="professor">professor</option>
-                <option value="ranch hand">ranch hand</option>
-              </select>
-            </label>
-          </div>
+            <div class="field-row">
+              <label style="flex:1 1 100%;">
+                Profession
+                <select id="charProfession">
+                  <option value="student">student</option>
+                  <option value="researcher">researcher</option>
+                  <option value="sheriff">sheriff</option>
+                  <option value="bartender">bartender</option>
+                  <option value="private investigator">private investigator</option>
+                  <option value="magic student">magic student</option>
+                  <option value="professor">professor</option>
+                  <option value="ranch hand">ranch hand</option>
+                </select>
+              </label>
+            </div>
 
-          <div class="field-row" style="margin:6px 0;">
-            <button id="charGenBtn" class="btn">Generate portrait</button>
-            <button id="charRandomBtn" class="btn">Random character</button>
-            <button id="charAcceptBtn" class="btn" disabled>Use this character</button>
-          </div>
+            <div class="field-row" style="margin:6px 0;">
+              <button id="charGenBtn" class="btn">Generate portrait</button>
+              <button id="charRandomBtn" class="btn">Random character</button>
+              <button id="charAcceptBtn" class="btn" disabled>Use this character</button>
+            </div>
+          </div><!-- /charControls -->
 
           <div id="portraitWrapper">
             <img id="playerPortrait" alt="Player portrait preview"/>
