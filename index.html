@@ -218,7 +218,20 @@
 </head>
 <body>
   <div class="wrap">
-    <h1>Point & Click Role-Playing MVP</h1>
+    <h1>Point & Click Role-Playing MVP</h1> 
+    <div style="margin-top:4px; display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
+      <label style="font-size:0.8rem;">
+        Image quality:
+        <select id="imgQuality">
+          <option value="low">low</option>
+          <option value="medium" selected>medium</option>
+          <option value="high">high</option>
+        </select>
+      </label>
+      <span style="font-size:0.75rem; opacity:0.75;">
+        Affects all new image generations.
+      </span>
+    </div>
     <div id="status">Pick a world, then create your character.</div>
 
     <div class="row">
