@@ -1,9 +1,5 @@
-// netlify/functions/openai.js — role-playing MVP
-// Hyper-real style + world constraints + NPCs + player sheet + equip items
-
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
-// ---- generic OpenAI helper with better error reporting ----
 async function openai(path, body) {
   const res = await fetch(`https://api.openai.com/v1/${path}`, {
     method: "POST",
@@ -16,11 +12,7 @@ async function openai(path, body) {
 
   const text = await res.text();
   let json = null;
-  try {
-    json = text ? JSON.parse(text) : null;
-  } catch {
-    json = null;
-  }
+  try { json = text ? JSON.parse(text) : null; } catch { json = null; }
 
   if (!res.ok) {
     const msg =
@@ -28,7 +20,6 @@ async function openai(path, body) {
       (text ? text.slice(0, 200) : `HTTP ${res.status} with empty body`);
     throw new Error(msg);
   }
-
   return json ?? {};
 }
 
@@ -100,7 +91,7 @@ exports.handler = async (event) => {
         "Never leave this world. Keep historical era, technology, clothing, and architecture consistent.\n\n"
       : "";
 
-    /* ---------- 1) generate initial scene image ---------- */
+    /* ---------- gen_image ---------- */
 
     if (op === "gen_image") {
       const basePrompt = str(body.prompt) || ("A room, " + GLOBAL_STYLE);
@@ -123,7 +114,7 @@ exports.handler = async (event) => {
       }
     }
 
-    /* ---------- 1b) generate player portrait (full body) ---------- */
+    /* ---------- gen_player_portrait ---------- */
 
     if (op === "gen_player_portrait") {
       const wTag = worldTag || "university";
@@ -165,7 +156,7 @@ exports.handler = async (event) => {
       }
     }
 
-    /* ---------- 2) identify clicked thing + options + NPC info ---------- */
+    /* ---------- identify_click ---------- */
 
     if (op === "identify_click") {
       const marked = str(body.marked_image_data_url);
@@ -197,13 +188,13 @@ exports.handler = async (event) => {
           "- At most ONE option should explicitly represent stowing/adding the object to the backpack.\n" +
           "- That option should clearly mention the backpack.\n\n" +
           "Each option should be a short, evocative sentence (10–30 words):\n" +
-          "- Start with an imperative verb (e.g., \"Place the necklace around her neck…\").\n" +
-          "- Include a hint about why the player might choose it (comfort, politeness, curiosity, risk, reward, etc.).\n\n" +
+          "- Start with an imperative verb.\n" +
+          "- Include a hint about why the player might choose it.\n\n" +
           "NPC identification:\n" +
           "- If the cursor is on or very near a specific person in the image, set is_character = true.\n" +
-          "- For such NPCs, choose a short, setting-appropriate name (e.g., \"Evelyn\", \"Sheriff Cole\").\n" +
+          "- For such NPCs, choose a short, setting-appropriate name.\n" +
           "- Use the list of existing NPCs to reuse names if the appearance clearly matches a known character.\n" +
-          "- character_summary should be 1–2 sentences (<= 60 words) focusing on appearance, role, and demeanor.\n\n" +
+          "- character_summary should be 1–2 sentences (<= 60 words).\n\n" +
           "Respond with STRICT JSON ONLY in this form:\n" +
           "{\n" +
           "  \"label\": \"descriptive noun phrase\",\n" +
@@ -220,6 +211,7 @@ exports.handler = async (event) => {
           playerSheetText,
           `Canvas size is ${body?.canvas_size?.width || 768}x${body?.canvas_size?.height || 512}. Cursor at (${x},${y}).`,
         ];
+        const priorPrompt = str(body.prior_prompt);
         if (priorPrompt) {
           userTextParts.push(`Prior scene prompt (hyper-real style):\n${priorPrompt}`);
         }
@@ -287,7 +279,7 @@ exports.handler = async (event) => {
       }
     }
 
-    /* ---------- 3) follow-up image + longer narrative ---------- */
+    /* ---------- gen_followup_image ---------- */
 
     if (op === "gen_followup_image") {
       const label = str(body.clicked_label) || "object";
@@ -305,22 +297,11 @@ exports.handler = async (event) => {
                 "Given a prior scene prompt, a clicked object, a chosen interaction, persistent world constraints, a player-character sheet, and NPC character sheets, you must:\n" +
                 "1) Describe the immediate consequence of that choice and the new scene that unfolds.\n" +
                 "2) Produce a concrete image generation prompt for the new scene.\n\n" +
-                "All scenes must remain consistent with the world constraints: same historical era, technology level, clothing, and architecture. Never leave the established world.\n" +
-                "The player-character is behind the camera; NPCs may comment on their apparent age, build, gender presentation, and profession in reasonable ways.\n\n" +
-                "VISUAL STYLE CONSTRAINT:\n" +
-                "- Every image is a hyper-realistic photograph, 50mm lens, shallow depth of field, high dynamic range, natural cinematic lighting.\n" +
-                "- Never describe it as a painting, drawing, sketch, illustration, or 3D render.\n\n" +
-                "By default, keep events and visuals realistic and non-magical.\n" +
-                "ONLY introduce overt magic or supernatural effects if the world clearly supports magic (for example, magical_school).\n\n" +
-                "The narrative must be 2–3 short paragraphs, together roughly 120–220 words. No bullet points.\n" +
-                "The first paragraph should focus on the immediate outcome of the player’s choice, including how nearby NPCs react (if relevant).\n" +
-                "The second (and optional third) paragraph should describe the new scene and how it feels to stand in it as the player.\n\n" +
-                "Respond with STRICT JSON ONLY:\n" +
-                "{\n" +
-                "  \"next_prompt\": \"visual prompt for the new image (<= 60 words) that preserves style and world continuity\",\n" +
-                "  \"story\": \"2–3 short paragraphs, 120–220 words in total, describing the outcome of the choice and the new scene\",\n" +
-                "  \"clicked_label_for_sprite\": \"short name for the item, if an object was taken\" (or null/false)\n" +
-                "}\n"
+                "All scenes must remain consistent with the world constraints.\n" +
+                "VISUAL STYLE: always hyper-realistic photograph, 50mm lens, shallow depth of field, high dynamic range, natural cinematic lighting.\n" +
+                "By default, keep events realistic; only allow overt magic in worlds that support it.\n" +
+                "Narrative: 2–3 short paragraphs (120–220 words).\n" +
+                "Respond with STRICT JSON ONLY containing next_prompt, story, clicked_label_for_sprite."
             },
             {
               role: "user",
@@ -376,7 +357,7 @@ exports.handler = async (event) => {
       }
     }
 
-    /* ---------- 4) sprite for backpack items ---------- */
+    /* ---------- make_item_sprite ---------- */
 
     if (op === "make_item_sprite") {
       const itemLabel = str(body.item_label) || "object";
@@ -404,7 +385,7 @@ exports.handler = async (event) => {
       }
     }
 
-    /* ---------- 5) change viewpoint (look left/right/up/down/zoom out) ---------- */
+    /* ---------- change_view ---------- */
 
     if (op === "change_view") {
       const direction = str(body.direction) || "left";
@@ -421,20 +402,9 @@ exports.handler = async (event) => {
                 "Given a prior scene prompt, a view direction, persistent world constraints, a player-character sheet, and NPC character sheets, you must:\n" +
                 "1) Describe how the camera shifts (left/right/up/down/zoom out) while staying in the same location or immediate area.\n" +
                 "2) Produce a concrete image generation prompt for the new viewpoint.\n\n" +
-                "All views must remain consistent with the world: same era, technology level, clothing, and architecture.\n" +
-                "Re-use important visual style cues from the prior scene prompt (lighting, camera style, color palette) and maintain the explicitly hyper-real photographic look.\n" +
-                "If NPCs are likely still in frame from the new angle, keep them recognizable and consistent with their character sheets.\n\n" +
-                "VISUAL STYLE CONSTRAINT:\n" +
-                "- Every image is a hyper-realistic photograph, 50mm lens, shallow depth of field, high dynamic range, natural cinematic lighting.\n" +
-                "- Never describe it as a painting, drawing, sketch, illustration, or 3D render.\n\n" +
-                "By default, keep events and visuals realistic and non-magical, unless the world clearly supports magic (e.g., magical_school).\n\n" +
-                "The narrative must be 2–3 short paragraphs, together roughly 120–220 words. No bullet points.\n" +
-                "Focus on how it feels as the player slowly turns their gaze or pulls back, noticing new details that clearly belong to the same space and world.\n\n" +
-                "Respond with STRICT JSON ONLY:\n" +
-                "{\n" +
-                "  \"next_prompt\": \"visual prompt for the new image from this viewpoint (<= 60 words) that preserves style and world continuity\",\n" +
-                "  \"story\": \"2–3 short paragraphs, 120–220 words, about how the view shifts and what is now seen\"\n" +
-                "}\n"
+                "Always keep world/era consistent and maintain a hyper-realistic photographic style.\n" +
+                "Narrative: 2–3 short paragraphs (120–220 words).\n" +
+                "Respond with STRICT JSON ONLY containing next_prompt and story."
             },
             {
               role: "user",
@@ -488,7 +458,7 @@ exports.handler = async (event) => {
       }
     }
 
-    /* ---------- 6) Equip an item on the player character portrait ---------- */
+    /* ---------- equip_item_on_character ---------- */
 
     if (op === "equip_item_on_character") {
       const itemLabel = str(body.item_label) || "item";
@@ -496,6 +466,7 @@ exports.handler = async (event) => {
       const nx = Number(click.nx);
       const ny = Number(click.ny);
       const equipped_items = Array.isArray(body.equipped_items) ? body.equipped_items : [];
+      const portraitUrl = str(body.current_portrait_url);
 
       try {
         const sys =
@@ -523,7 +494,7 @@ exports.handler = async (event) => {
           ? "Items already equipped on the character: " + equipped_items.join(", ") + ".\n"
           : "No items are currently tracked as equipped on the character.\n";
 
-        const userText =
+        const baseText =
           worldText +
           playerSheetText +
           equippedText +
@@ -534,13 +505,21 @@ exports.handler = async (event) => {
           "- Otherwise set success=true and describe how the item appears: worn, held, draped, strapped on, etc.\n" +
           "If success=true, produce an image prompt that shows the SAME character in the SAME world style, full-body, now with this item equipped. " +
           "Do not change their age, body shape, or general appearance.\n" +
-          "If the new item naturally replaces one of the existing equipped_items (for example, a new hat replacing an old hat), set replaced_item_label to that item name; otherwise null.";
+          "If the new item naturally replaces one of the existing equipped_items (for example, a new hat replacing an old hat), set replaced_item_label to that item name; otherwise null.\n" +
+          "Use the reference portrait image to keep the character's face, clothing, and pose as consistent as possible.";
+
+        const userContent = [
+          { type: "input_text", text: baseText }
+        ];
+        if (portraitUrl) {
+          userContent.push({ type: "input_image", image_url: portraitUrl });
+        }
 
         const resp = await openai("responses", {
           model: "gpt-4o-mini",
           input: [
             { role: "system", content: sys },
-            { role: "user", content: userText }
+            { role: "user", content: userContent }
           ]
         });
 
