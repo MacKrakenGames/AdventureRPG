@@ -20,6 +20,7 @@ const els = {
   viewZoomOutBtn: document.getElementById("viewZoomOutBtn"),
 
   // player character UI
+  charControls: document.getElementById("charControls"),
   charAge: document.getElementById("charAge"),
   charSex: document.getElementById("charSex"),
   charWeight: document.getElementById("charWeight"),
@@ -79,17 +80,16 @@ let backpack = new Array(BACKPACK_SLOTS).fill(null);
 backpack[0] = { type: "cursor", label: "Cursor", spriteUrl: null };
 let activeSlotIndex = 0;
 
-// ---- NPC registry (experimental character sheets) ----
-// npcMap: { [name: string]: { name, summary } }
+// ---- NPC registry ----
 let npcMap = {};
 
 // ---- Player character state ----
-let playerCharacter = null; // sheet object
+let playerCharacter = null;
 let playerReady = false;
 
 // ---- Equip-on-character state ----
-let equipClick = null;      // { nx, ny } last click on portrait
-let equippedItems = [];     // labels currently considered equipped
+let equipClick = null;      // { nx, ny }
+let equippedItems = [];     // labels
 
 // ---- Game state ----
 let current = {
@@ -114,7 +114,6 @@ function clearLog(){
   renderChoices();
 }
 
-// JSON helper
 async function postJSON(url, body) {
   const res = await fetch(url, {
     method: "POST",
@@ -298,6 +297,9 @@ async function generatePlayerPortrait(isRandom) {
     els.portraitMarker.style.display = "none";
     els.equipBtn.disabled = true;
 
+    // ensure controls visible in case we regenerated after reset
+    els.charControls.style.display = "block";
+
     setStatus("Portrait ready. Accept to enter the world.");
   } catch (e) {
     log(String(e));
@@ -319,6 +321,9 @@ function acceptPlayerCharacter() {
   setStatus("Character locked in. You can now enter the scene.");
   els.playerHint.textContent =
     "Character locked. You can still reset the run to start over with a new character.";
+
+  // hide creator controls once locked
+  els.charControls.style.display = "none";
 }
 
 /* ---------------- Step 1: generate base scene ---------------- */
@@ -414,7 +419,7 @@ async function drawImageToCanvas(url) {
   });
 }
 
-/* ---------------- Step 3: on scene click, record coords ---------------- */
+/* ---------------- Scene click ---------------- */
 
 async function onCanvasClick(evt) {
   if (!current.imageUrl) {
@@ -477,7 +482,6 @@ function onPortraitClick(evt) {
   const ny = (evt.clientY - rect.top) / rect.height;
   equipClick = { nx, ny };
 
-  // show marker
   els.portraitMarker.style.display = "block";
   els.portraitMarker.style.left = (nx * 100) + "%";
   els.portraitMarker.style.top = (ny * 100) + "%";
@@ -490,7 +494,7 @@ function onPortraitClick(evt) {
     `Click “Equip selected item on character” to try putting it there.`;
 }
 
-/* ---------------- Draw cursor ---------------- */
+/* ---------------- Draw cursor on scene ---------------- */
 
 function drawCursor(x, y) {
   const R = 6;
@@ -524,7 +528,7 @@ async function redrawImageWithCursor(x, y) {
   drawCursor(x, y);
 }
 
-/* ---------------- Step 5: confirm selection → identify + options ---------------- */
+/* ---------------- Confirm selection ---------------- */
 
 async function onConfirmSelection() {
   if (!current.imageUrl) {
@@ -608,7 +612,7 @@ async function onConfirmSelection() {
   }
 }
 
-/* ---------------- Step 6: choose option → new scene + story ---------------- */
+/* ---------------- Choose option -> new scene ---------------- */
 
 async function onChooseOption(index) {
   if (!current.labeled) {
@@ -672,19 +676,35 @@ async function onChooseOption(index) {
     await drawImageToCanvas(current.imageUrl);
     setStatus("New scene ready – click to select, then confirm");
 
+    // attempt sprite/backpack if user chose stow
     if (isStow && follow.clicked_label_for_sprite !== false) {
       try {
+        const labelForBackpack = follow.clicked_label_for_sprite || follow.clicked_label || current.labeled || "Item";
         const spriteResp = await postJSON("/.netlify/functions/openai", {
           op: "make_item_sprite",
-          item_label: follow.clicked_label_for_sprite || follow.clicked_label || current.labeled
+          item_label: labelForBackpack
         });
-        if (spriteResp.image_url) {
-          const labelForBackpack = follow.clicked_label_for_sprite || follow.clicked_label || "Item";
-          addToBackpack(labelForBackpack, spriteResp.image_url);
-          log(`Added "${labelForBackpack}" to backpack.`);
+
+        if (!spriteResp.image_url) {
+          log("E401-SPRITE: Sprite response missing image_url; item not added.");
+          setStatus("Item was conceptually added, but sprite generation failed.");
+          els.hud.textContent +=
+            "\n\n(You tried to stow an item, but the icon failed to generate. We'll still treat it as if you picked something up in the story.)";
+        } else {
+          const added = addToBackpack(labelForBackpack, spriteResp.image_url);
+          if (!added) {
+            setStatus("Backpack is full; could not store the new item.");
+            els.hud.textContent +=
+              "\n\n(Your backpack is full, so this new item couldn’t be stored as an icon.)";
+          } else {
+            log(`Added "${labelForBackpack}" to backpack.`);
+          }
         }
       } catch (e) {
         log("E401-SPRITE: " + String(e));
+        setStatus("We tried to create a sprite for that item, but something went wrong.");
+        els.hud.textContent +=
+          "\n\n(An error occurred while creating the backpack icon. The narrative still assumes you interacted with the object.)";
       }
     }
   } catch (e) {
@@ -745,7 +765,6 @@ async function onEquipItem() {
 
     if (!resp.image_url) throw new Error("E701-EQUIP: Missing image_url from server");
 
-    // success – update portrait and item state
     els.playerPortrait.src = resp.image_url;
     log(`Equipped ${active.label} on character.`);
     els.playerHint.textContent =
@@ -760,12 +779,10 @@ async function onEquipItem() {
       log(`Replaced item: ${rep} (added to backpack).`);
     }
 
-    // remove equipped item from backpack and reset selection
     backpack[activeSlotIndex] = null;
     activeSlotIndex = 0;
     renderBackpack();
 
-    // clear marker
     equipClick = null;
     els.portraitMarker.style.display = "none";
     els.equipBtn.disabled = true;
@@ -885,6 +902,8 @@ els.resetBtn.onclick = () => {
   equipClick = null;
   els.portraitMarker.style.display = "none";
   els.equipBtn.disabled = true;
+
+  els.charControls.style.display = "block";
 
   ctx.clearRect(0,0,W,H);
   clearLog();
