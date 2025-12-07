@@ -18,6 +18,7 @@ const els = {
   viewUpBtn: document.getElementById("viewUpBtn"),
   viewDownBtn: document.getElementById("viewDownBtn"),
   viewZoomOutBtn: document.getElementById("viewZoomOutBtn"),
+  imgQuality: document.getElementById("imgQuality"),
 
   // player character UI
   charControls: document.getElementById("charControls"),
@@ -131,6 +132,11 @@ async function postJSON(url, body) {
   if (!res.ok) throw new Error(String(data.error || `HTTP ${res.status}`));
   return data;
 }
+
+function getQuality() {
+  return els.imgQuality?.value || "medium";
+}
+
 
 /* ---------------- Backpack helpers ---------------- */
 
@@ -278,6 +284,7 @@ async function generatePlayerPortrait(isRandom) {
       world_tag: worldTag,
       world_description: WORLD_DESCRIPTIONS[worldTag],
       player_character: sheet,
+      quality: getQuality(),
     });
 
     if (!resp.image_url) {
@@ -360,6 +367,7 @@ async function generateImage() {
       world_tag: current.worldTag,
       world_description: WORLD_DESCRIPTIONS[current.worldTag],
       player_character: playerCharacter,
+      quality: getQuality(),
     });
     if (!out.image_url) throw new Error("E101-GEN: Missing image_url");
     current.imageUrl = out.image_url;
@@ -646,6 +654,7 @@ async function onChooseOption(index) {
       world_description: WORLD_DESCRIPTIONS[current.worldTag],
       npcs: getNpcArray(),
       player_character: playerCharacter,
+      quality: getQuality(),
     }).catch(e => { throw new Error("E301-FOLLOW: " + String(e)); });
 
     if (!follow.image_url) throw new Error("E301-FOLLOW: Missing image_url");
@@ -682,7 +691,8 @@ async function onChooseOption(index) {
         const labelForBackpack = follow.clicked_label_for_sprite || follow.clicked_label || current.labeled || "Item";
         const spriteResp = await postJSON("/.netlify/functions/openai", {
           op: "make_item_sprite",
-          item_label: labelForBackpack
+          item_label: labelForBackpack,
+          quality: getQuality(),
         });
 
         if (!spriteResp.image_url) {
@@ -751,6 +761,7 @@ async function onEquipItem() {
       item_label: active.label,
       click: equipClick,
       equipped_items: equippedItems,
+      quality: getQuality(),
     });
 
     if (!resp) throw new Error("E701-EQUIP: Empty response");
@@ -817,6 +828,7 @@ async function onChangeView(direction) {
       world_description: WORLD_DESCRIPTIONS[current.worldTag],
       npcs: getNpcArray(),
       player_character: playerCharacter,
+      quality: getQuality(),
     }).catch(e => { throw new Error("E501-VIEW: " + String(e)); });
 
     if (!resp.image_url) throw new Error("E501-VIEW: Missing image_url");
