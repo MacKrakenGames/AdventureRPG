@@ -67,6 +67,14 @@ exports.handler = async (event) => {
 
     const op = body.op;
 
+    // Normalize quality for all image-generating operations
+    const rawQuality = body.quality;
+    const reqQuality =
+      rawQuality && ["low", "medium", "high"].includes(rawQuality)
+        ? rawQuality
+        : undefined;
+
+
     const worldTag = str(body.world_tag);
     const worldDesc = str(body.world_description);
     const playerCharacter = body.player_character || null;
@@ -102,7 +110,7 @@ exports.handler = async (event) => {
           prompt,
           n: 1,
           size: "1024x1024",
-          quality: "medium"
+          quality: reqQuality || "medium"
         });
 
         const b64 = img.data?.[0]?.b64_json;
@@ -124,7 +132,9 @@ exports.handler = async (event) => {
         `with ${sheet.hair_style || "short hair"} and ${sheet.hair_color || "brown hair"}, ` +
         `${sheet.eye_color || "neutral eyes"}, ${sheet.weight_range || "average build"}, ` +
         `${sheet.chest_size || ""} ${sheet.hip_size || ""}, portrayed as a ${sheet.profession || "ordinary person"}.\n` +
-        "Full-body framing from head to toe, the character standing in a relaxed, natural pose, centered in the frame. " +
+        "Full-body vertical framing from head to toe, the entire body fully visible including the very top of the head and the shoes, " +
+        "with a small margin of background around them. Do not crop off the head or the feet. " +
+        "The character stands in a relaxed, natural pose, centered in the frame. " +
         "Clothing is neutral but world-appropriate, and the background softly hints at their world without distracting from the character.\n";
 
       const worldFlavor =
@@ -144,7 +154,7 @@ exports.handler = async (event) => {
           prompt,
           n: 1,
           size: "1024x1024",
-          quality: "medium"
+          quality: reqQuality || "medium"
         });
 
         const b64 = img.data?.[0]?.b64_json;
@@ -344,7 +354,7 @@ exports.handler = async (event) => {
           prompt: next_prompt,
           n: 1,
           size: "1024x1024",
-          quality: "medium"
+          quality: reqQuality || "medium"
         });
 
         const b64 = img.data?.[0]?.b64_json;
@@ -371,7 +381,7 @@ exports.handler = async (event) => {
           prompt,
           n: 1,
           size: "1024x1024",
-          quality: "low",
+          quality: reqQuality || "low",
           background: "transparent",
           output_format: "png"
         });
@@ -445,7 +455,7 @@ exports.handler = async (event) => {
           prompt: next_prompt,
           n: 1,
           size: "1024x1024",
-          quality: "low"
+          quality: reqQuality || "low"
         });
 
         const b64 = img.data?.[0]?.b64_json;
@@ -551,7 +561,7 @@ exports.handler = async (event) => {
           prompt: next_prompt,
           n: 1,
           size: "1024x1024",
-          quality: "medium"
+          quality: reqQuality || "medium"
         });
 
         const b64 = img.data?.[0]?.b64_json;
