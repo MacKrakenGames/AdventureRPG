@@ -2,8 +2,8 @@
 // Frontend logic for the role-playing point-and-click MVP
 
 // Canvas size (keep in sync with CSS)
-const W = 1024;
-const H = 1024;
+const W = 512;
+const H = 512;
 
 // DOM references
 const els = {
