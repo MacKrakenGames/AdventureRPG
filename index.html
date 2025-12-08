@@ -141,6 +141,36 @@
       margin-top: 6px;
     }
     strong { font-size: 0.85rem; }
+    /* 4x1 interaction mode bar above the backpack */
+    #interactRow {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 4px;
+      margin-top: 6px;
+    }
+    
+    .interact-slot {
+      width: 100%;
+      aspect-ratio: 4 / 3;
+      border-radius: 6px;
+      border: 1px solid #1f2937;
+      background: #020617;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+    
+    .interact-slot.active {
+      border-color: #38bdf8;
+      box-shadow: 0 0 0 1px rgba(56,189,248,0.6);
+    }
+    
+    .interact-slot span {
+      pointer-events: none;
+    }
+
     #backpackGrid {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
@@ -407,9 +437,35 @@
           </button>
         </div>
 
-        <!-- Backpack -->
+        <!-- Interact modes + Backpack -->
         <div class="card">
-          <strong>Backpack</strong>
+          <strong>Interact modes</strong>
+          <div id="interactRow">
+            <!-- Wildcard / default cursor -->
+            <button class="interact-slot active" data-mode="wildcard" title="Wildcard: general interaction">
+              <span>✛</span>
+            </button>
+            <!-- Pick up / loot -->
+            <button class="interact-slot" data-mode="pickup" title="Pick up: focus on items to collect">
+              <span>🧺</span>
+            </button>
+            <!-- Dialogue / talk -->
+            <button class="interact-slot" data-mode="dialogue" title="Dialogue: talk to people">
+              <span>💬</span>
+            </button>
+            <!-- Move / pathing -->
+            <button class="interact-slot" data-mode="move" title="Move: choose where to go">
+              <span>🚶</span>
+            </button>
+          </div>
+
+          <div style="margin-top:6px; font-size:0.75rem; opacity:0.8;">
+            Choose how you intend to interact, then click in the scene. Backpack items still work as tools on top of that.
+          </div>
+
+          <div style="margin-top:8px;">
+            <strong>Backpack</strong>
+          </div>
           <div id="backpackGrid"></div>
         </div>
 
