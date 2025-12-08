@@ -19,6 +19,7 @@ const els = {
   viewDownBtn: document.getElementById("viewDownBtn"),
   viewZoomOutBtn: document.getElementById("viewZoomOutBtn"),
   imgQuality: document.getElementById("imgQuality"),
+  interactRow: document.getElementById("interactRow"),
 
   // player character UI
   charControls: document.getElementById("charControls"),
@@ -77,9 +78,16 @@ const WORLD_DESCRIPTIONS = {
 
 // ---- Backpack state ----
 const BACKPACK_SLOTS = 32;
+
+// Interaction modes for the 4-slot bar above the backpack
+const INTERACTION_MODES = ["wildcard", "pickup", "dialogue", "move"];
+let activeInteractionMode = "wildcard";   // default to general interaction
+
+// Backpack now contains ONLY items (no built-in cursor slot)
 let backpack = new Array(BACKPACK_SLOTS).fill(null);
-backpack[0] = { type: "cursor", label: "Cursor", spriteUrl: null };
-let activeSlotIndex = 0;
+// null means "no item is currently selected as a tool"
+let activeSlotIndex = null;
+
 
 // ---- NPC registry ----
 let npcMap = {};
@@ -138,7 +146,18 @@ function getQuality() {
 }
 
 
-/* ---------------- Backpack helpers ---------------- */
+/* ---------------- Backpack/Interact helpers ---------------- */
+function renderInteractModes() {
+  const buttons = document.querySelectorAll("#interactRow .interact-slot");
+  buttons.forEach(btn => {
+    const mode = btn.dataset.mode;
+    if (mode === activeInteractionMode) {
+      btn.classList.add("active");
+    } else {
+      btn.classList.remove("active");
+    }
+  });
+}
 
 function renderBackpack() {
   els.backpackGrid.innerHTML = "";
@@ -146,15 +165,11 @@ function renderBackpack() {
     const slot = backpack[i];
     const div = document.createElement("div");
     div.className = "backpack-slot";
-    if (i === activeSlotIndex) div.classList.add("active");
+    if (activeSlotIndex === i) div.classList.add("active");
     div.title = slot ? slot.label : "Empty slot";
 
     if (slot) {
-      if (slot.type === "cursor") {
-        const span = document.createElement("span");
-        span.textContent = "✛";
-        div.appendChild(span);
-      } else if (slot.spriteUrl) {
+      if (slot.spriteUrl) {
         const img = document.createElement("img");
         img.src = slot.spriteUrl;
         img.alt = slot.label;
@@ -171,21 +186,34 @@ function renderBackpack() {
   }
 }
 
+
 function onBackpackSlotClick(i) {
-  if (!backpack[i]) return;
-  activeSlotIndex = i;
-  renderBackpack();
-  if (i === 0) {
-    setStatus("Cursor selected – click the scene, then confirm.");
-    els.hud.textContent =
-      "You switch to the simple cursor.\nClick in the scene to choose a point, then confirm.";
+  const slot = backpack[i];
+  if (!slot) return;
+
+  // Clicking the same slot toggles selection off
+  if (activeSlotIndex === i) {
+    activeSlotIndex = null;
   } else {
-    setStatus(`Using item: ${backpack[i].label}. Click the scene or your portrait, then confirm/equip.`);
-    els.hud.textContent =
-      `You ready the ${backpack[i].label} from your backpack.\n` +
-      `Click in the scene to use it there, or click your character portrait to try equipping it.`;
+    activeSlotIndex = i;
   }
+  renderBackpack();
+
+  const active = activeSlotIndex != null ? backpack[activeSlotIndex] : null;
+  if (!active) {
+    setStatus("No item selected from the backpack.");
+    els.hud.textContent =
+      "You put your backpacked items away for now.\n" +
+      "You can still interact using the mode bar above.";
+    return;
+  }
+
+  setStatus(`Using item: ${active.label}. Click the scene or your portrait, then confirm/equip.`);
+  els.hud.textContent =
+    `You ready the ${active.label} from your backpack.\n` +
+    `Click in the scene to use it there, or click your character portrait to try equipping it.`;
 }
+
 
 function addToBackpack(label, spriteUrl) {
   for (let i = 1; i < BACKPACK_SLOTS; i++) {
@@ -444,19 +472,47 @@ async function onCanvasClick(evt) {
   current.stowOptionIndex = null;
   renderChoices();
 
-  log(`Selection: (${x}, ${y})`);
+  const heldItem = activeSlotIndex != null ? backpack[activeSlotIndex] : null;
 
-  const activeTool = backpack[activeSlotIndex];
-  if (activeTool && activeTool.type === "item") {
-    setStatus(`Using ${activeTool.label} at (${x}, ${y}) – press confirm.`);
+  const mode = activeInteractionMode;
+  let modeLabel;
+  switch (mode) {
+    case "pickup":   modeLabel = "pick-up"; break;
+    case "dialogue": modeLabel = "dialogue"; break;
+    case "move":     modeLabel = "move-to"; break;
+    default:         modeLabel = "wildcard"; break;
+  }
+
+  log(`Selection: (${x}, ${y}) in ${mode} mode`);
+
+  if (heldItem) {
+    setStatus(`Using ${heldItem.label} in ${modeLabel} mode at (${x}, ${y}) – press confirm.`);
     els.hud.textContent =
-      `You ready the ${activeTool.label} and focus it on the scene at (${x}, ${y}).\n\n` +
-      "Press “4) Confirm selection” to see how the scene responds to this action.";
+      `You ready the ${heldItem.label} in ${modeLabel} mode and focus it on the scene at (${x}, ${y}).\n\n` +
+      "Press “4) Confirm selection” to see how the scene responds to this choice.";
   } else {
-    setStatus(`Selection at (${x}, ${y}) – press confirm.`);
-    els.hud.textContent =
-      `You mark a point at (${x}, ${y}).\n\n` +
-      "Press “4) Confirm selection” to discover how this part of the scene might be described or interacted with.";
+    // Mode-specific flavour text when no item is held
+    let expl;
+    if (mode === "pickup") {
+      expl =
+        "You mark a spot where you might reach for a small object to carry.\n\n" +
+        "Press “4) Confirm selection” to look for something to pick up here.";
+    } else if (mode === "dialogue") {
+      expl =
+        "You mark a spot where you might address someone or draw attention.\n\n" +
+        "Press “4) Confirm selection” to see who might respond.";
+    } else if (mode === "move") {
+      expl =
+        "You mark a place you might walk toward.\n\n" +
+        "Press “4) Confirm selection” to see what it’s like to move there.";
+    } else {
+      expl =
+        "You mark a general point of interest.\n\n" +
+        "Press “4) Confirm selection” to explore what this part of the scene represents.";
+    }
+
+    setStatus(`Selection at (${x}, ${y}) in ${modeLabel} mode – press confirm.`);
+    els.hud.textContent = expl;
   }
 
   try {
@@ -468,6 +524,7 @@ async function onCanvasClick(evt) {
     els.confirmBtn.disabled = true;
   }
 }
+
 
 /* ---------------- Portrait click: choose equip spot ---------------- */
 
@@ -562,23 +619,25 @@ async function onConfirmSelection() {
     }
 
     const { x, y } = current.clicked;
-    const activeTool = backpack[activeSlotIndex];
+    const activeTool = activeSlotIndex != null ? backpack[activeSlotIndex] : null;
     const heldItemLabel =
-      activeTool && activeTool.type === "item" ? activeTool.label : null;
-
+     activeTool && activeTool.type === "item" ? activeTool.label : null;
+   
     const idResp = await postJSON("/.netlify/functions/openai", {
-      op: "identify_click",
-      original_url: current.imageUrl,
-      marked_image_data_url: markedDataUrl,
-      x, y,
-      canvas_size: { width: W, height: H },
-      held_item_label: heldItemLabel,
-      prior_prompt: current.prompt,
-      world_tag: current.worldTag,
-      world_description: WORLD_DESCRIPTIONS[current.worldTag],
-      npcs: getNpcArray(),
-      player_character: playerCharacter,
+     op: "identify_click",
+     original_url: current.imageUrl,
+     marked_image_data_url: markedDataUrl,
+     x, y,
+     canvas_size: { width: W, height: H },
+     held_item_label: heldItemLabel,
+     interaction_mode: activeInteractionMode,   // NEW: tell backend which cursor mode is active
+     prior_prompt: current.prompt,
+     world_tag: current.worldTag,
+     world_description: WORLD_DESCRIPTIONS[current.worldTag],
+     npcs: getNpcArray(),
+     player_character: playerCharacter,
     }).catch(e => { throw new Error("E201-ID: " + String(e)); });
+
 
     if (!idResp.label) throw new Error("E201-ID: No label from vision");
     if (!Array.isArray(idResp.options) || idResp.options.length === 0) {
@@ -734,6 +793,10 @@ function disableChoiceButtons(disabled) {
 /* ---------------- Equip: send to backend ---------------- */
 
 async function onEquipItem() {
+  if (activeSlotIndex == null) {
+    setStatus("Select an item from the backpack first.");
+    return;
+  }
   const active = backpack[activeSlotIndex];
   if (!active || active.type !== "item") {
     setStatus("Select an item from the backpack first.");
@@ -791,7 +854,7 @@ async function onEquipItem() {
     }
 
     backpack[activeSlotIndex] = null;
-    activeSlotIndex = 0;
+    activeSlotIndex = null;
     renderBackpack();
 
     equipClick = null;
@@ -900,8 +963,8 @@ els.resetBtn.onclick = () => {
     stowOptionIndex: null,
   };
   backpack = new Array(BACKPACK_SLOTS).fill(null);
-  backpack[0] = { type: "cursor", label: "Cursor", spriteUrl: null };
-  activeSlotIndex = 0;
+  activeSlotIndex = null;
+  activeInteractionMode = "wildcard";
   npcMap = {};
   playerCharacter = null;
   playerReady = false;
@@ -919,6 +982,7 @@ els.resetBtn.onclick = () => {
 
   ctx.clearRect(0,0,W,H);
   clearLog();
+  renderInteractModes();
   renderBackpack();
   els.confirmBtn.disabled = true;
   setViewButtonsDisabled(true);
@@ -939,7 +1003,35 @@ els.charRandomBtn.onclick = () => generatePlayerPortrait(true);
 els.charAcceptBtn.onclick = acceptPlayerCharacter;
 els.equipBtn.onclick = onEquipItem;
 
+// Interaction mode bar: wildcard / pickup / dialogue / move
+document.querySelectorAll("#interactRow .interact-slot").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const mode = btn.dataset.mode;
+    if (!INTERACTION_MODES.includes(mode)) return;
+    activeInteractionMode = mode;
+    renderInteractModes();
+
+    // Small user-facing status text per mode
+    switch (mode) {
+      case "pickup":
+        setStatus("Pick-up mode: click near a small object you might collect, then confirm.");
+        break;
+      case "dialogue":
+        setStatus("Dialogue mode: click near a person or gathering to talk, then confirm.");
+        break;
+      case "move":
+        setStatus("Move-to mode: click where you want to go, then confirm.");
+        break;
+      default:
+        setStatus("Wildcard mode: click anything interesting, then confirm.");
+        break;
+    }
+  });
+});
+
+
 // Initial render
 renderBackpack();
+renderInteractModes();
 setViewButtonsDisabled(true);
 els.genBtn.disabled = true;
