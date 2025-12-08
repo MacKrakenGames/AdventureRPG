@@ -7,10 +7,10 @@ async function openai(path, body) {
   const res = await fetch(`https://api.openai.com/v1/${path}`, {
     method: "POST",
     headers: {
-      "Authorization": `Bearer ${OPENAI_API_KEY}`,
-      "Content-Type": "application/json"
+      Authorization: `Bearer ${OPENAI_API_KEY}`,
+      "Content-Type": "application/json",
     },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
   });
 
   const text = await res.text();
@@ -32,28 +32,27 @@ async function openai(path, body) {
 }
 
 /**
- * Small helpers for Netlify responses
+ * Netlify response helpers
  */
 function json200(obj) {
   return {
     statusCode: 200,
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(obj)
+    body: JSON.stringify(obj),
   };
 }
 function jsonErr(code, msg, http = 500) {
   return {
     statusCode: http,
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ error: `${code}: ${msg}` })
+    body: JSON.stringify({ error: `${code}: ${msg}` }),
   };
 }
 
 /**
- * Helpers for responses API text extraction
+ * Responses API helpers
  */
 function getOutputText(resp) {
-  // Support both new and older result shapes
   return (
     resp?.output_text ||
     resp?.output?.[0]?.content?.[0]?.text ||
@@ -61,13 +60,6 @@ function getOutputText(resp) {
     ""
   );
 }
-function str(v) {
-  return typeof v === "string" ? v : "";
-}
-
-/**
- * Extract JSON from a responses result, with fallback to substring extraction
- */
 function extractJson(resp) {
   const s = getOutputText(resp) || "";
   try {
@@ -78,38 +70,43 @@ function extractJson(resp) {
       try {
         return JSON.parse(m[0]);
       } catch {
-        // fall through
+        // ignore
       }
     }
   }
   throw new Error("JSON parse failed");
 }
+function str(v) {
+  return typeof v === "string" ? v : "";
+}
 
-/**
- * Global style string for hyper-real images
- */
 const GLOBAL_STYLE =
   "hyper-realistic photograph, 50mm lens, shallow depth of field, high dynamic range, natural cinematic lighting, camera-quality image, not a painting, not a drawing, not an illustration.";
 
 exports.handler = async (event) => {
   try {
-    if (event.httpMethod !== "POST") return jsonErr("S000-METHOD", "Method Not Allowed", 405);
-    if (!OPENAI_API_KEY)           return jsonErr("S000-KEY", "Missing OPENAI_API_KEY", 500);
+    if (event.httpMethod !== "POST")
+      return jsonErr("S000-METHOD", "Method Not Allowed", 405);
+    if (!OPENAI_API_KEY)
+      return jsonErr("S000-KEY", "Missing OPENAI_API_KEY", 500);
 
     let body;
-    try { body = JSON.parse(event.body || "{}"); }
-    catch { return jsonErr("S000-BADJSON", "Malformed request body", 400); }
+    try {
+      body = JSON.parse(event.body || "{}");
+    } catch {
+      return jsonErr("S000-BADJSON", "Malformed request body", 400);
+    }
 
     const op = body.op;
 
-    // Normalise quality for image operations
+    // Normalise quality
     const rawQuality = body.quality;
     const reqQuality =
       rawQuality && ["low", "medium", "high"].includes(rawQuality)
         ? rawQuality
         : undefined;
 
-    // Normalise interaction mode (used for identify_click)
+    // Normalise interaction mode
     const rawInteractionMode = body.interaction_mode;
     const interactionMode =
       typeof rawInteractionMode === "string" &&
@@ -130,24 +127,28 @@ exports.handler = async (event) => {
         `- build: ${playerCharacter.weight_range || "unspecified"}\n` +
         `- chest: ${playerCharacter.chest_size || "unspecified"}\n` +
         `- hips: ${playerCharacter.hip_size || "unspecified"}\n` +
-        `- hair: ${playerCharacter.hair_style || "unspecified"}, ${playerCharacter.hair_color || "unspecified"}\n` +
+        `- hair: ${playerCharacter.hair_style || "unspecified"}, ${
+          playerCharacter.hair_color || "unspecified"
+        }\n` +
         `- eyes: ${playerCharacter.eye_color || "unspecified"}\n` +
         `- profession: ${playerCharacter.profession || "unspecified"}\n` +
         "Assume this is the person behind the camera, the one NPCs are speaking to.\n"
       : "";
 
-    const worldText = worldTag || worldDesc
-      ? `Persistent world constraints:\nWorld tag: ${worldTag || "unspecified"}\n` +
-        (worldDesc ? worldDesc + "\n" : "") +
-        "Never leave this world. Keep historical era, technology, clothing, and architecture consistent.\n\n"
-      : "";
+    const worldText =
+      worldTag || worldDesc
+        ? `Persistent world constraints:\nWorld tag: ${
+            worldTag || "unspecified"
+          }\n` +
+          (worldDesc ? worldDesc + "\n" : "") +
+          "Never leave this world. Keep historical era, technology, clothing, and architecture consistent.\n\n"
+        : "";
 
     /* ------------------------------------------------------------------ */
     /* op: gen_image                                                      */
     /* ------------------------------------------------------------------ */
     if (op === "gen_image") {
-      const basePrompt = str(body.prompt) || ("A room, " + GLOBAL_STYLE);
-      // Append global hyper-real style, but avoid doubling it if already present
+      const basePrompt = str(body.prompt) || "A scene, hyper-realistic.";
       const prompt = basePrompt.toLowerCase().includes("hyper-realistic")
         ? basePrompt
         : `${basePrompt} ${GLOBAL_STYLE}`;
@@ -158,7 +159,7 @@ exports.handler = async (event) => {
           prompt,
           n: 1,
           size: "1024x1024",
-          quality: reqQuality || "medium"
+          quality: reqQuality || "medium",
         });
 
         const b64 = img.data?.[0]?.b64_json;
@@ -178,10 +179,18 @@ exports.handler = async (event) => {
       const sheet = playerCharacter || {};
 
       const basePrompt =
-        `Hyper-realistic full-body portrait photograph of a ${sheet.age_range || "adult"} ${sheet.sex || "person"} ` +
-        `with ${sheet.hair_style || "short hair"} and ${sheet.hair_color || "brown hair"}, ` +
-        `${sheet.eye_color || "neutral eyes"}, ${sheet.weight_range || "average build"}, ` +
-        `${sheet.chest_size || ""} ${sheet.hip_size || ""}, portrayed as a ${sheet.profession || "ordinary person"}.\n` +
+        `Hyper-realistic full-body portrait photograph of a ${
+          sheet.age_range || "adult"
+        } ${sheet.sex || "person"} ` +
+        `with ${sheet.hair_style || "short hair"} and ${
+          sheet.hair_color || "brown hair"
+        }, ` +
+        `${sheet.eye_color || "neutral eyes"}, ${
+          sheet.weight_range || "average build"
+        }, ` +
+        `${sheet.chest_size || ""} ${
+          sheet.hip_size || ""
+        }, portrayed as a ${sheet.profession || "ordinary person"}.\n` +
         "Camera is pulled back so the character is relatively small in the frame. " +
         "Full-body vertical framing from head to toe, the entire figure fully visible including the very top of the head and both feet, " +
         "with generous empty background space above the head and below the feet. " +
@@ -205,13 +214,13 @@ exports.handler = async (event) => {
           model: "gpt-image-1",
           prompt,
           n: 1,
-          // Vertical, portrait-like aspect to reduce cropping
           size: "1024x1536",
-          quality: reqQuality || "medium"
+          quality: reqQuality || "medium",
         });
 
         const b64 = img.data?.[0]?.b64_json;
-        if (!b64) return jsonErr("S601-CHAR", "No b64_json from player portrait generation");
+        if (!b64)
+          return jsonErr("S601-CHAR", "No b64_json from player portrait generation");
         const image_url = `data:image/png;base64,${b64}`;
         return json200({ image_url });
       } catch (e) {
@@ -248,7 +257,6 @@ exports.handler = async (event) => {
           "- 'move': focus on moving the player's position. All 4 options should describe different ways of moving toward, around, or away from the clicked area (e.g. walk closer, step onto the porch, climb the stairs, cross the street).\n\n" +
           "The player character is the person behind the camera; NPCs may react to their age, appearance, and profession in dialog.\n\n" +
           "All interactions must remain consistent with the persistent world constraints you are given. DO NOT change era, technology level, or setting genre.\n" +
-          "In a western frontier town, stay in the 1800s; in private_eye, stay in the 1940s; in a modern university, stay contemporary; in a magical school, magic is allowed but visuals remain realistic.\n\n" +
           "By default, keep interactions realistic and non-magical. Only introduce overt magic in clearly magical worlds.\n\n" +
           "If no held item is provided, options should rely on the environment and NPCs. If a held item is provided, options should describe using that item on the target AND still respect the interaction_mode.\n\n" +
           "For carryable objects:\n" +
@@ -261,34 +269,40 @@ exports.handler = async (event) => {
           "- character_summary should be 1–2 sentences (<= 60 words).\n\n" +
           "Respond with STRICT JSON ONLY in this form:\n" +
           "{\n" +
-          "  \"label\": \"descriptive noun phrase\",\n" +
+          '  "label": "descriptive noun phrase",\n' +
           "  \"carryable\": true or false,\n" +
           "  \"stow_option_index\": number or null,\n" +
           "  \"options\": [\"option 1\", \"option 2\", \"option 3\", \"option 4\"],\n" +
           "  \"is_character\": true or false,\n" +
-          "  \"character_name\": \"short name or null if not a character\",\n" +
-          "  \"character_summary\": \"1–2 sentence summary or null if not a character\"\n" +
+          '  "character_name": "short name or null if not a character",\n' +
+          '  "character_summary": "1–2 sentence summary or null if not a character"\n' +
           "}";
 
         const userTextParts = [
           worldText,
           playerSheetText,
-          `Canvas size is ${body?.canvas_size?.width || 768}x${body?.canvas_size?.height || 512}. Cursor at (${x},${y}).`,
+          `Canvas size is ${
+            body?.canvas_size?.width || 768
+          }x${body?.canvas_size?.height || 512}. Cursor at (${x},${y}).`,
           `Current interaction_mode: ${interactionMode}.`,
         ];
         if (priorPrompt) {
-          userTextParts.push(`Prior scene prompt (hyper-real style):\n${priorPrompt}`);
+          userTextParts.push(
+            `Prior scene prompt (hyper-real style):\n${priorPrompt}`
+          );
         }
         if (npcs.length) {
           userTextParts.push(
             "Existing NPCs (reuse names if the clicked person matches one of these):\n" +
-            npcs.map(n => `- ${n.name}: ${n.summary || ""}`).join("\n")
+              npcs
+                .map((n) => `- ${n.name}: ${n.summary || ""}`)
+                .join("\n")
           );
         }
         if (heldItemLabel) {
           userTextParts.push(
             `The player is holding an item from their backpack: "${heldItemLabel}". ` +
-            "Treat the interaction as using this item on the target."
+              "Treat the interaction as using this item on the target."
           );
         }
 
@@ -297,25 +311,26 @@ exports.handler = async (event) => {
           input: [
             {
               role: "system",
-              content: [
-                { type: "input_text", text: sys }
-              ]
+              content: [{ type: "input_text", text: sys }],
             },
             {
               role: "user",
               content: [
                 { type: "input_text", text: userTextParts.join("\n\n") },
                 { type: "input_text", text: "Return JSON only; no explanation." },
-                { type: "input_image", image_url: marked }
-              ]
-            }
-          ]
+                { type: "input_image", image_url: marked },
+              ],
+            },
+          ],
         });
 
         const parsed = extractJson(resp);
         const label = str(parsed.label).trim();
         const options = Array.isArray(parsed.options)
-          ? parsed.options.slice(0, 4).map(o => str(o).trim()).filter(Boolean)
+          ? parsed.options
+              .slice(0, 4)
+              .map((o) => str(o).trim())
+              .filter(Boolean)
           : [];
         const carryable = Boolean(parsed.carryable);
         let stow_option_index = parsed.stow_option_index;
@@ -329,10 +344,12 @@ exports.handler = async (event) => {
 
         const is_character = Boolean(parsed.is_character);
         const character_name = str(parsed.character_name).trim() || null;
-        const character_summary = str(parsed.character_summary).trim() || null;
+        const character_summary =
+          str(parsed.character_summary).trim() || null;
 
         if (!label) return jsonErr("S201-ID", "Missing label from model");
-        if (options.length !== 4) return jsonErr("S201-ID", "Expected 4 options from model");
+        if (options.length !== 4)
+          return jsonErr("S201-ID", "Expected 4 options from model");
 
         return json200({
           label,
@@ -349,17 +366,78 @@ exports.handler = async (event) => {
     }
 
     /* ------------------------------------------------------------------ */
+    /* op: list_character_items                                           */
+    /*  NEW: given a character label + world context, list visible        */
+    /*  clothing/accessories/props that can be treated as inventory.      */
+    /* ------------------------------------------------------------------ */
+    if (op === "list_character_items") {
+      const label = str(body.character_label) || "person";
+
+      try {
+        const sys =
+          "You are assisting a point-and-click role-playing game.\n" +
+          "The player has clicked on a specific character and wants to focus on acquiring items from that person's visible clothing, accessories, or handheld objects.\n\n" +
+          "Given a description of the character and the world, list 3–6 distinct, visible items that could reasonably be treated as inventory objects (for example: hat, yellow tank top, denim shorts, bracelet, satchel, notebook, pocket watch).\n" +
+          "Avoid listing body parts. Only list removable, physical things.\n" +
+          "Keep everything consistent with the world/era: no futuristic tech in historical settings, etc.\n" +
+          "Respond with STRICT JSON ONLY of the form:\n" +
+          '{ "items": ["item 1", "item 2", ...] }';
+
+        const npcText = npcs.length
+          ? "Known NPCs so far:\n" +
+            npcs.map((n) => `- ${n.name}: ${n.summary || ""}`).join("\n") +
+            "\n\n"
+          : "";
+
+        const userText =
+          worldText +
+          playerSheetText +
+          npcText +
+          `The clicked character is described as: ${label}.\n` +
+          "List concrete, visible, removable items on this character that the player might try to acquire.";
+
+        const resp = await openai("responses", {
+          model: "gpt-4o-mini",
+          input: [
+            { role: "system", content: [{ type: "input_text", text: sys }] },
+            { role: "user", content: [{ type: "input_text", text: userText }] },
+          ],
+        });
+
+        const parsed = extractJson(resp);
+        const itemsRaw = parsed.items;
+        const items = Array.isArray(itemsRaw)
+          ? itemsRaw
+              .map((v) => str(v).trim())
+              .filter(Boolean)
+          : [];
+
+        if (!items.length) {
+          return jsonErr(
+            "S210-LOOTLIST",
+            "No items returned for character.",
+            500
+          );
+        }
+
+        return json200({ items });
+      } catch (e) {
+        return jsonErr("S210-LOOTLIST", e.message || String(e));
+      }
+    }
+
+    /* ------------------------------------------------------------------ */
     /* op: gen_followup_image                                             */
     /* ------------------------------------------------------------------ */
     if (op === "gen_followup_image") {
       const label = str(body.clicked_label) || "object";
       const action = str(body.interaction_choice) || "";
-      const prior = str(body.prior_prompt) || ("A room, " + GLOBAL_STYLE);
+      const prior = str(body.prior_prompt) || "A scene.";
 
       try {
         const sys =
           "You are the narrative and visual director for a point-and-click role-playing game.\n" +
-          "Given a prior scene prompt, a clicked object, a chosen interaction, persistent world constraints, a player-character sheet, and NPC character sheets, you must:\n" +
+          "Given a prior scene prompt, a clicked object (which may be a specific item of clothing or a prop), a chosen interaction, persistent world constraints, a player-character sheet, and NPC character sheets, you must:\n" +
           "1) Describe the immediate consequence of that choice and the new scene that unfolds.\n" +
           "2) Produce a concrete image generation prompt for the new scene.\n\n" +
           "All scenes must remain consistent with the world constraints.\n" +
@@ -368,13 +446,15 @@ exports.handler = async (event) => {
           "Narrative: 2–3 short paragraphs (120–220 words).\n" +
           "Respond with STRICT JSON ONLY containing next_prompt, story, clicked_label_for_sprite.";
 
+        const npcText = npcs.length
+          ? "NPC character sheets:\n" +
+            npcs.map((n) => `- ${n.name}: ${n.summary || ""}`).join("\n") +
+            "\n\n"
+          : "";
+
         const userText =
           worldText +
-          (npcs.length
-            ? "NPC character sheets:\n" +
-              npcs.map(n => `- ${n.name}: ${n.summary || ""}`).join("\n") +
-              "\n\n"
-            : "") +
+          npcText +
           playerSheetText +
           `Prior scene prompt (hyper-real photo style):\n${prior}\n\n` +
           `The player clicked on: ${label}\n` +
@@ -385,8 +465,8 @@ exports.handler = async (event) => {
           model: "gpt-4o-mini",
           input: [
             { role: "system", content: [{ type: "input_text", text: sys }] },
-            { role: "user",   content: [{ type: "input_text", text: userText }] }
-          ]
+            { role: "user", content: [{ type: "input_text", text: userText }] },
+          ],
         });
 
         const parsed = extractJson(resp);
@@ -397,7 +477,9 @@ exports.handler = async (event) => {
         if (!next_prompt) {
           next_prompt =
             prior +
-            ` Focus on the ${label} and the player action: ${action || "interact"}, preserving the same hyper-real photographic style and world constraints.`;
+            ` Focus on the ${label} and the player action: ${
+              action || "interact"
+            }, preserving the same hyper-real photographic style and world constraints.`;
         }
         if (!next_prompt.toLowerCase().includes("hyper-realistic")) {
           next_prompt += " " + GLOBAL_STYLE;
@@ -412,11 +494,15 @@ exports.handler = async (event) => {
           prompt: next_prompt,
           n: 1,
           size: "1024x1024",
-          quality: reqQuality || "medium"
+          quality: reqQuality || "medium",
         });
 
         const b64 = img.data?.[0]?.b64_json;
-        if (!b64) return jsonErr("S301-FOLLOW", "No b64_json from follow-up generation");
+        if (!b64)
+          return jsonErr(
+            "S301-FOLLOW",
+            "No b64_json from follow-up generation"
+          );
         const image_url = `data:image/png;base64,${b64}`;
 
         return json200({ image_url, next_prompt, story, clicked_label_for_sprite });
@@ -442,11 +528,15 @@ exports.handler = async (event) => {
           size: "1024x1024",
           quality: reqQuality || "low",
           background: "transparent",
-          output_format: "png"
+          output_format: "png",
         });
 
         const b64 = img.data?.[0]?.b64_json;
-        if (!b64) return jsonErr("S401-SPRITE", "No b64_json from sprite generation");
+        if (!b64)
+          return jsonErr(
+            "S401-SPRITE",
+            "No b64_json from sprite generation"
+          );
         const image_url = `data:image/png;base64,${b64}`;
         return json200({ image_url });
       } catch (e) {
@@ -459,7 +549,7 @@ exports.handler = async (event) => {
     /* ------------------------------------------------------------------ */
     if (op === "change_view") {
       const direction = str(body.direction) || "left";
-      const prior = str(body.prior_prompt) || ("A room, " + GLOBAL_STYLE);
+      const prior = str(body.prior_prompt) || "A scene.";
 
       try {
         const sys =
@@ -471,13 +561,15 @@ exports.handler = async (event) => {
           "Narrative: 2–3 short paragraphs (120–220 words).\n" +
           "Respond with STRICT JSON ONLY containing next_prompt and story.";
 
+        const npcText = npcs.length
+          ? "NPC character sheets:\n" +
+            npcs.map((n) => `- ${n.name}: ${n.summary || ""}`).join("\n") +
+            "\n\n"
+          : "";
+
         const userText =
           worldText +
-          (npcs.length
-            ? "NPC character sheets:\n" +
-              npcs.map(n => `- ${n.name}: ${n.summary || ""}`).join("\n") +
-              "\n\n"
-            : "") +
+          npcText +
           playerSheetText +
           `Prior scene prompt (hyper-real photo style):\n${prior}\n\n` +
           `The player chooses to look: ${direction}.\n` +
@@ -487,8 +579,8 @@ exports.handler = async (event) => {
           model: "gpt-4o-mini",
           input: [
             { role: "system", content: [{ type: "input_text", text: sys }] },
-            { role: "user",   content: [{ type: "input_text", text: userText }] }
-          ]
+            { role: "user", content: [{ type: "input_text", text: userText }] },
+          ],
         });
 
         const parsed = extractJson(resp);
@@ -513,11 +605,15 @@ exports.handler = async (event) => {
           prompt: next_prompt,
           n: 1,
           size: "1024x1024",
-          quality: reqQuality || "low"
+          quality: reqQuality || "low",
         });
 
         const b64 = img.data?.[0]?.b64_json;
-        if (!b64) return jsonErr("S501-VIEW", "No b64_json from view-change generation");
+        if (!b64)
+          return jsonErr(
+            "S501-VIEW",
+            "No b64_json from view-change generation"
+          );
         const image_url = `data:image/png;base64,${b64}`;
 
         return json200({ image_url, next_prompt, story });
@@ -534,7 +630,9 @@ exports.handler = async (event) => {
       const click = body.click || {};
       const nx = Number(click.nx);
       const ny = Number(click.ny);
-      const equipped_items = Array.isArray(body.equipped_items) ? body.equipped_items : [];
+      const equipped_items = Array.isArray(body.equipped_items)
+        ? body.equipped_items
+        : [];
       const portraitUrl = str(body.current_portrait_url);
 
       try {
@@ -556,11 +654,17 @@ exports.handler = async (event) => {
 
         const coordText =
           Number.isFinite(nx) && Number.isFinite(ny)
-            ? `The player clicked normalized portrait coordinates (x=${nx.toFixed(2)}, y=${ny.toFixed(2)}), where x=0,y=0 is top-left and x=1,y=1 is bottom-right.\n`
+            ? `The player clicked normalized portrait coordinates (x=${nx.toFixed(
+                2
+              )}, y=${ny.toFixed(
+                2
+              )}), where x=0,y=0 is top-left and x=1,y=1 is bottom-right.\n`
             : "The player clicked somewhere on the portrait (exact coordinates unavailable).\n";
 
         const equippedText = equipped_items.length
-          ? "Items already equipped on the character: " + equipped_items.join(", ") + ".\n"
+          ? "Items already equipped on the character: " +
+            equipped_items.join(", ") +
+            ".\n"
           : "No items are currently tracked as equipped on the character.\n";
 
         const baseText =
@@ -577,9 +681,7 @@ exports.handler = async (event) => {
           "If the new item naturally replaces one of the existing equipped_items (for example, a new hat replacing an old hat), set replaced_item_label to that item name; otherwise null.\n" +
           "Use the reference portrait image to keep the character's face, clothing, and pose as consistent as possible.";
 
-        const userContent = [
-          { type: "input_text", text: baseText }
-        ];
+        const userContent = [{ type: "input_text", text: baseText }];
         if (portraitUrl) {
           userContent.push({ type: "input_image", image_url: portraitUrl });
         }
@@ -588,8 +690,8 @@ exports.handler = async (event) => {
           model: "gpt-4o-mini",
           input: [
             { role: "system", content: [{ type: "input_text", text: sys }] },
-            { role: "user",   content: userContent }
-          ]
+            { role: "user", content: userContent },
+          ],
         });
 
         const parsed = extractJson(resp);
@@ -601,7 +703,7 @@ exports.handler = async (event) => {
         if (!success) {
           return json200({
             equip_success: false,
-            reason: reason || "Item incompatible with the character or pose."
+            reason: reason || "Item incompatible with the character or pose.",
           });
         }
 
@@ -620,17 +722,21 @@ exports.handler = async (event) => {
           prompt: next_prompt,
           n: 1,
           size: "1024x1536",
-          quality: reqQuality || "medium"
+          quality: reqQuality || "medium",
         });
 
         const b64 = img.data?.[0]?.b64_json;
-        if (!b64) return jsonErr("S701-EQUIP", "No b64_json from equip generation");
+        if (!b64)
+          return jsonErr(
+            "S701-EQUIP",
+            "No b64_json from equip generation"
+          );
         const image_url = `data:image/png;base64,${b64}`;
 
         return json200({
           equip_success: true,
           image_url,
-          replaced_item_label
+          replaced_item_label,
         });
       } catch (e) {
         return jsonErr("S701-EQUIP", e.message || String(e));
@@ -638,7 +744,7 @@ exports.handler = async (event) => {
     }
 
     /* ------------------------------------------------------------------ */
-    /* unknown op                                                         */
+    /* Unknown op                                                         */
     /* ------------------------------------------------------------------ */
     return jsonErr("S000-OP", "Unknown op", 400);
   } catch (err) {
