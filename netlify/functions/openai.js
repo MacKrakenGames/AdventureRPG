@@ -1,5 +1,8 @@
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
+/**
+ * Low-level OpenAI helper
+ */
 async function openai(path, body) {
   const res = await fetch(`https://api.openai.com/v1/${path}`, {
     method: "POST",
@@ -12,7 +15,11 @@ async function openai(path, body) {
 
   const text = await res.text();
   let json = null;
-  try { json = text ? JSON.parse(text) : null; } catch { json = null; }
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch {
+    json = null;
+  }
 
   if (!res.ok) {
     const msg =
@@ -20,17 +27,21 @@ async function openai(path, body) {
       (text ? text.slice(0, 200) : `HTTP ${res.status} with empty body`);
     throw new Error(msg);
   }
+
   return json ?? {};
 }
 
-function json200(obj){
+/**
+ * Small helpers for Netlify responses
+ */
+function json200(obj) {
   return {
     statusCode: 200,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(obj)
   };
 }
-function jsonErr(code, msg, http = 500){
+function jsonErr(code, msg, http = 500) {
   return {
     statusCode: http,
     headers: { "Content-Type": "application/json" },
@@ -38,21 +49,45 @@ function jsonErr(code, msg, http = 500){
   };
 }
 
-function getOutputText(resp){
-  return resp?.output_text || resp?.output?.[0]?.content?.[0]?.text || "";
+/**
+ * Helpers for responses API text extraction
+ */
+function getOutputText(resp) {
+  // Support both new and older result shapes
+  return (
+    resp?.output_text ||
+    resp?.output?.[0]?.content?.[0]?.text ||
+    resp?.output?.[0]?.content?.[0]?.output_text ||
+    ""
+  );
 }
-function str(v){ return typeof v === "string" ? v : ""; }
+function str(v) {
+  return typeof v === "string" ? v : "";
+}
 
+/**
+ * Extract JSON from a responses result, with fallback to substring extraction
+ */
 function extractJson(resp) {
   const s = getOutputText(resp) || "";
-  try { return JSON.parse(s); } catch {}
-  const m = s.match(/\{[\s\S]*\}/);
-  if (m) {
-    try { return JSON.parse(m[0]); } catch {}
+  try {
+    return JSON.parse(s);
+  } catch {
+    const m = s.match(/\{[\s\S]*\}/);
+    if (m) {
+      try {
+        return JSON.parse(m[0]);
+      } catch {
+        // fall through
+      }
+    }
   }
   throw new Error("JSON parse failed");
 }
 
+/**
+ * Global style string for hyper-real images
+ */
 const GLOBAL_STYLE =
   "hyper-realistic photograph, 50mm lens, shallow depth of field, high dynamic range, natural cinematic lighting, camera-quality image, not a painting, not a drawing, not an illustration.";
 
@@ -67,14 +102,22 @@ exports.handler = async (event) => {
 
     const op = body.op;
 
-    // Normalize quality for all image-generating operations
+    // Normalise quality for image operations
     const rawQuality = body.quality;
     const reqQuality =
       rawQuality && ["low", "medium", "high"].includes(rawQuality)
         ? rawQuality
         : undefined;
 
+    // Normalise interaction mode (used for identify_click)
+    const rawInteractionMode = body.interaction_mode;
+    const interactionMode =
+      typeof rawInteractionMode === "string" &&
+      ["wildcard", "pickup", "dialogue", "move"].includes(rawInteractionMode)
+        ? rawInteractionMode
+        : "wildcard";
 
+    // Common context
     const worldTag = str(body.world_tag);
     const worldDesc = str(body.world_description);
     const playerCharacter = body.player_character || null;
@@ -99,11 +142,16 @@ exports.handler = async (event) => {
         "Never leave this world. Keep historical era, technology, clothing, and architecture consistent.\n\n"
       : "";
 
-    /* ---------- gen_image ---------- */
-
+    /* ------------------------------------------------------------------ */
+    /* op: gen_image                                                      */
+    /* ------------------------------------------------------------------ */
     if (op === "gen_image") {
       const basePrompt = str(body.prompt) || ("A room, " + GLOBAL_STYLE);
-      const prompt = `${basePrompt} ${GLOBAL_STYLE}`;
+      // Append global hyper-real style, but avoid doubling it if already present
+      const prompt = basePrompt.toLowerCase().includes("hyper-realistic")
+        ? basePrompt
+        : `${basePrompt} ${GLOBAL_STYLE}`;
+
       try {
         const img = await openai("images/generations", {
           model: "gpt-image-1",
@@ -122,18 +170,22 @@ exports.handler = async (event) => {
       }
     }
 
-    /* ---------- gen_player_portrait ---------- */
-
+    /* ------------------------------------------------------------------ */
+    /* op: gen_player_portrait                                            */
+    /* ------------------------------------------------------------------ */
     if (op === "gen_player_portrait") {
       const wTag = worldTag || "university";
       const sheet = playerCharacter || {};
+
       const basePrompt =
-        `Hyper-realistic full-body, the entire head and feet visible, portrait photograph of a ${sheet.age_range || "adult"} ${sheet.sex || "person"} ` +
+        `Hyper-realistic full-body portrait photograph of a ${sheet.age_range || "adult"} ${sheet.sex || "person"} ` +
         `with ${sheet.hair_style || "short hair"} and ${sheet.hair_color || "brown hair"}, ` +
         `${sheet.eye_color || "neutral eyes"}, ${sheet.weight_range || "average build"}, ` +
         `${sheet.chest_size || ""} ${sheet.hip_size || ""}, portrayed as a ${sheet.profession || "ordinary person"}.\n` +
-        "Full-body vertical framing from head to toe, the entire body fully visible including the very top of the head and the shoes, " +
-        "with a small margin of background around them. Do not crop off the head or the feet. " +
+        "Camera is pulled back so the character is relatively small in the frame. " +
+        "Full-body vertical framing from head to toe, the entire figure fully visible including the very top of the head and both feet, " +
+        "with generous empty background space above the head and below the feet. " +
+        "Do NOT crop off the head, hair, shoulders, legs, or feet. " +
         "The character stands in a relaxed, natural pose, centered in the frame. " +
         "Clothing is neutral but world-appropriate, and the background softly hints at their world without distracting from the character.\n";
 
@@ -153,6 +205,7 @@ exports.handler = async (event) => {
           model: "gpt-image-1",
           prompt,
           n: 1,
+          // Vertical, portrait-like aspect to reduce cropping
           size: "1024x1536",
           quality: reqQuality || "medium"
         });
@@ -166,8 +219,9 @@ exports.handler = async (event) => {
       }
     }
 
-    /* ---------- identify_click ---------- */
-
+    /* ------------------------------------------------------------------ */
+    /* op: identify_click                                                 */
+    /* ------------------------------------------------------------------ */
     if (op === "identify_click") {
       const marked = str(body.marked_image_data_url);
       const x = Number.isFinite(body.x) ? body.x : null;
@@ -185,21 +239,21 @@ exports.handler = async (event) => {
           "You will see a hyper-realistic photograph with a bright cursor/crosshair. Your tasks:\n" +
           "1) Name the object or region under (or closest to) the cursor with a short but descriptive noun phrase (up to ~12 words).\n" +
           "2) Decide whether this object is reasonably carryable by hand (true/false).\n" +
-          "3) Propose 4 distinct ways the player could interact with that thing.\n" +
+          "3) Propose 4 distinct ways the player could interact with that thing, constrained by the current interaction_mode.\n" +
           "4) Decide if the clicked region is a specific human non-player character (NPC) and, if so, provide a consistent character entry.\n\n" +
+          "interaction_mode can be one of:\n" +
+          "- 'wildcard': normal behaviour. Mix of physical, observational, dialog, or movement options as appropriate.\n" +
+          "- 'pickup': focus on collecting items. All 4 options should primarily be about picking up or otherwise acquiring carryable objects and adding them to the backpack. If nothing carryable is present, the options can explain that the player searches but finds nothing pocketable.\n" +
+          "- 'dialogue': focus on speaking with people. All 4 options should be conversational: starting, escalating, calming, or redirecting conversation. If no clear person is present, choose the most plausible NPC or explain that there is nobody to talk to.\n" +
+          "- 'move': focus on moving the player's position. All 4 options should describe different ways of moving toward, around, or away from the clicked area (e.g. walk closer, step onto the porch, climb the stairs, cross the street).\n\n" +
           "The player character is the person behind the camera; NPCs may react to their age, appearance, and profession in dialog.\n\n" +
           "All interactions must remain consistent with the persistent world constraints you are given. DO NOT change era, technology level, or setting genre.\n" +
           "In a western frontier town, stay in the 1800s; in private_eye, stay in the 1940s; in a modern university, stay contemporary; in a magical school, magic is allowed but visuals remain realistic.\n\n" +
-          "By default, keep interactions realistic and non-magical.\n" +
-          "ONLY introduce overt magic or supernatural effects if the world/scene clearly supports magic (for example, magical_school with enchanted details).\n\n" +
-          "If no held item is provided, options can be general (inspect, push, open, speak to someone, hand the object to someone, etc.).\n" +
-          "If a held item is provided, options should describe using that item on the target.\n\n" +
+          "By default, keep interactions realistic and non-magical. Only introduce overt magic in clearly magical worlds.\n\n" +
+          "If no held item is provided, options should rely on the environment and NPCs. If a held item is provided, options should describe using that item on the target AND still respect the interaction_mode.\n\n" +
           "For carryable objects:\n" +
-          "- At most ONE option should explicitly represent stowing/adding the object to the backpack.\n" +
-          "- That option should clearly mention the backpack.\n\n" +
-          "Each option should be a short, evocative sentence (10–30 words):\n" +
-          "- Start with an imperative verb.\n" +
-          "- Include a hint about why the player might choose it.\n\n" +
+          "- In 'pickup' mode, at least one option must explicitly represent stowing/adding the object to the backpack.\n" +
+          "- In other modes, at most one option should explicitly stow an object.\n\n" +
           "NPC identification:\n" +
           "- If the cursor is on or very near a specific person in the image, set is_character = true.\n" +
           "- For such NPCs, choose a short, setting-appropriate name.\n" +
@@ -220,8 +274,8 @@ exports.handler = async (event) => {
           worldText,
           playerSheetText,
           `Canvas size is ${body?.canvas_size?.width || 768}x${body?.canvas_size?.height || 512}. Cursor at (${x},${y}).`,
+          `Current interaction_mode: ${interactionMode}.`,
         ];
-        const priorPrompt = str(body.prior_prompt);
         if (priorPrompt) {
           userTextParts.push(`Prior scene prompt (hyper-real style):\n${priorPrompt}`);
         }
@@ -241,7 +295,12 @@ exports.handler = async (event) => {
         const resp = await openai("responses", {
           model: "gpt-4o",
           input: [
-            { role: "system", content: sys },
+            {
+              role: "system",
+              content: [
+                { type: "input_text", text: sys }
+              ]
+            },
             {
               role: "user",
               content: [
@@ -289,45 +348,44 @@ exports.handler = async (event) => {
       }
     }
 
-    /* ---------- gen_followup_image ---------- */
-
+    /* ------------------------------------------------------------------ */
+    /* op: gen_followup_image                                             */
+    /* ------------------------------------------------------------------ */
     if (op === "gen_followup_image") {
       const label = str(body.clicked_label) || "object";
       const action = str(body.interaction_choice) || "";
       const prior = str(body.prior_prompt) || ("A room, " + GLOBAL_STYLE);
 
       try {
+        const sys =
+          "You are the narrative and visual director for a point-and-click role-playing game.\n" +
+          "Given a prior scene prompt, a clicked object, a chosen interaction, persistent world constraints, a player-character sheet, and NPC character sheets, you must:\n" +
+          "1) Describe the immediate consequence of that choice and the new scene that unfolds.\n" +
+          "2) Produce a concrete image generation prompt for the new scene.\n\n" +
+          "All scenes must remain consistent with the world constraints.\n" +
+          "VISUAL STYLE: always hyper-realistic photograph, 50mm lens, shallow depth of field, high dynamic range, natural cinematic lighting.\n" +
+          "By default, keep events realistic; only allow overt magic in worlds that support it.\n" +
+          "Narrative: 2–3 short paragraphs (120–220 words).\n" +
+          "Respond with STRICT JSON ONLY containing next_prompt, story, clicked_label_for_sprite.";
+
+        const userText =
+          worldText +
+          (npcs.length
+            ? "NPC character sheets:\n" +
+              npcs.map(n => `- ${n.name}: ${n.summary || ""}`).join("\n") +
+              "\n\n"
+            : "") +
+          playerSheetText +
+          `Prior scene prompt (hyper-real photo style):\n${prior}\n\n` +
+          `The player clicked on: ${label}\n` +
+          (action ? `They chose to: ${action}\n\n` : "\n") +
+          "Describe what happens as a result and what the player now sees, then provide the new image prompt and optional clicked_label_for_sprite in JSON.";
+
         const resp = await openai("responses", {
           model: "gpt-4o-mini",
           input: [
-            {
-              role: "system",
-              content:
-                "You are the narrative and visual director for a point-and-click role-playing game.\n" +
-                "Given a prior scene prompt, a clicked object, a chosen interaction, persistent world constraints, a player-character sheet, and NPC character sheets, you must:\n" +
-                "1) Describe the immediate consequence of that choice and the new scene that unfolds.\n" +
-                "2) Produce a concrete image generation prompt for the new scene.\n\n" +
-                "All scenes must remain consistent with the world constraints.\n" +
-                "VISUAL STYLE: always hyper-realistic photograph, 50mm lens, shallow depth of field, high dynamic range, natural cinematic lighting.\n" +
-                "By default, keep events realistic; only allow overt magic in worlds that support it.\n" +
-                "Narrative: 2–3 short paragraphs (120–220 words).\n" +
-                "Respond with STRICT JSON ONLY containing next_prompt, story, clicked_label_for_sprite."
-            },
-            {
-              role: "user",
-              content:
-                worldText +
-                (npcs.length
-                  ? "NPC character sheets:\n" +
-                    npcs.map(n => `- ${n.name}: ${n.summary || ""}`).join("\n") +
-                    "\n\n"
-                  : "") +
-                playerSheetText +
-                `Prior scene prompt (hyper-real photo style):\n${prior}\n\n` +
-                `The player clicked on: ${label}\n` +
-                (action ? `They chose to: ${action}\n\n` : "\n") +
-                "Describe what happens as a result and what the player now sees, then provide the new image prompt and optional clicked_label_for_sprite in JSON."
-            }
+            { role: "system", content: [{ type: "input_text", text: sys }] },
+            { role: "user",   content: [{ type: "input_text", text: userText }] }
           ]
         });
 
@@ -367,8 +425,9 @@ exports.handler = async (event) => {
       }
     }
 
-    /* ---------- make_item_sprite ---------- */
-
+    /* ------------------------------------------------------------------ */
+    /* op: make_item_sprite                                               */
+    /* ------------------------------------------------------------------ */
     if (op === "make_item_sprite") {
       const itemLabel = str(body.item_label) || "object";
       try {
@@ -395,41 +454,40 @@ exports.handler = async (event) => {
       }
     }
 
-    /* ---------- change_view ---------- */
-
+    /* ------------------------------------------------------------------ */
+    /* op: change_view                                                    */
+    /* ------------------------------------------------------------------ */
     if (op === "change_view") {
       const direction = str(body.direction) || "left";
       const prior = str(body.prior_prompt) || ("A room, " + GLOBAL_STYLE);
 
       try {
+        const sys =
+          "You are a visual director for a point-and-click role-playing game.\n" +
+          "Given a prior scene prompt, a view direction, persistent world constraints, a player-character sheet, and NPC character sheets, you must:\n" +
+          "1) Describe how the camera shifts (left/right/up/down/zoom out) while staying in the same location or immediate area.\n" +
+          "2) Produce a concrete image generation prompt for the new viewpoint.\n\n" +
+          "Always keep world/era consistent and maintain a hyper-realistic photographic style.\n" +
+          "Narrative: 2–3 short paragraphs (120–220 words).\n" +
+          "Respond with STRICT JSON ONLY containing next_prompt and story.";
+
+        const userText =
+          worldText +
+          (npcs.length
+            ? "NPC character sheets:\n" +
+              npcs.map(n => `- ${n.name}: ${n.summary || ""}`).join("\n") +
+              "\n\n"
+            : "") +
+          playerSheetText +
+          `Prior scene prompt (hyper-real photo style):\n${prior}\n\n` +
+          `The player chooses to look: ${direction}.\n` +
+          "Describe the new view and what is visible, then provide the image prompt in JSON.";
+
         const resp = await openai("responses", {
           model: "gpt-4o-mini",
           input: [
-            {
-              role: "system",
-              content:
-                "You are a visual director for a point-and-click role-playing game.\n" +
-                "Given a prior scene prompt, a view direction, persistent world constraints, a player-character sheet, and NPC character sheets, you must:\n" +
-                "1) Describe how the camera shifts (left/right/up/down/zoom out) while staying in the same location or immediate area.\n" +
-                "2) Produce a concrete image generation prompt for the new viewpoint.\n\n" +
-                "Always keep world/era consistent and maintain a hyper-realistic photographic style.\n" +
-                "Narrative: 2–3 short paragraphs (120–220 words).\n" +
-                "Respond with STRICT JSON ONLY containing next_prompt and story."
-            },
-            {
-              role: "user",
-              content:
-                worldText +
-                (npcs.length
-                  ? "NPC character sheets:\n" +
-                    npcs.map(n => `- ${n.name}: ${n.summary || ""}`).join("\n") +
-                    "\n\n"
-                  : "") +
-                playerSheetText +
-                `Prior scene prompt (hyper-real photo style):\n${prior}\n\n` +
-                `The player chooses to look: ${direction}.\n` +
-                "Describe the new view and what is visible, then provide the image prompt in JSON."
-            }
+            { role: "system", content: [{ type: "input_text", text: sys }] },
+            { role: "user",   content: [{ type: "input_text", text: userText }] }
           ]
         });
 
@@ -468,8 +526,9 @@ exports.handler = async (event) => {
       }
     }
 
-    /* ---------- equip_item_on_character ---------- */
-
+    /* ------------------------------------------------------------------ */
+    /* op: equip_item_on_character                                        */
+    /* ------------------------------------------------------------------ */
     if (op === "equip_item_on_character") {
       const itemLabel = str(body.item_label) || "item";
       const click = body.click || {};
@@ -528,8 +587,8 @@ exports.handler = async (event) => {
         const resp = await openai("responses", {
           model: "gpt-4o-mini",
           input: [
-            { role: "system", content: sys },
-            { role: "user", content: userContent }
+            { role: "system", content: [{ type: "input_text", text: sys }] },
+            { role: "user",   content: userContent }
           ]
         });
 
@@ -560,7 +619,7 @@ exports.handler = async (event) => {
           model: "gpt-image-1",
           prompt: next_prompt,
           n: 1,
-          size: "1024x1024",
+          size: "1024x1536",
           quality: reqQuality || "medium"
         });
 
@@ -578,6 +637,9 @@ exports.handler = async (event) => {
       }
     }
 
+    /* ------------------------------------------------------------------ */
+    /* unknown op                                                         */
+    /* ------------------------------------------------------------------ */
     return jsonErr("S000-OP", "Unknown op", 400);
   } catch (err) {
     console.error(err);
