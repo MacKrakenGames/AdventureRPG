@@ -444,7 +444,11 @@ exports.handler = async (event) => {
           "VISUAL STYLE: always hyper-realistic photograph, 50mm lens, shallow depth of field, high dynamic range, natural cinematic lighting.\n" +
           "By default, keep events realistic; only allow overt magic in worlds that support it.\n" +
           "Narrative: 2–3 short paragraphs (120–220 words).\n" +
-          "Respond with STRICT JSON ONLY containing next_prompt, story, clicked_label_for_sprite.";
+          "Respond with STRICT JSON ONLY containing next_prompt, story, clicked_label_for_sprite.\n" +
+          "RULES FOR clicked_label_for_sprite:\n" +
+          "- Set this ONLY if the narrative describes the player successfully acquiring a NEW physical item (e.g. picking something up, finding loot, or being handed an object).\n" +
+          "- If the player merely talks to someone, looks at something, or moves, this MUST be null.\n" +
+          "- If an item is acquired, this string must be the short name of that specific item (e.g. 'rusty key', 'apple'), NOT the name of the person/container you clicked on.";
 
         const npcText = npcs.length
           ? "NPC character sheets:\n" +
