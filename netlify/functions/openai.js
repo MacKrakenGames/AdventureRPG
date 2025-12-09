@@ -367,8 +367,6 @@ exports.handler = async (event) => {
 
     /* ------------------------------------------------------------------ */
     /* op: list_character_items                                           */
-    /*  NEW: given a character label + world context, list visible        */
-    /*  clothing/accessories/props that can be treated as inventory.      */
     /* ------------------------------------------------------------------ */
     if (op === "list_character_items") {
       const label = str(body.character_label) || "person";
@@ -377,12 +375,12 @@ exports.handler = async (event) => {
         const sys =
           "You are assisting a point-and-click role-playing game.\n" +
           "The player has clicked on a specific character and wants to focus on acquiring items from that person's visible clothing, accessories, or handheld objects.\n\n" +
-          "Given a description of the character and the world, list 3–6 distinct, visible items that could reasonably be treated as inventory objects (for example: hat, yellow tank top, denim shorts, bracelet, satchel, notebook, pocket watch).\n" +
+          "Given a description of the character and the world, list 3–6 distinct, visible items that could reasonably be treated as inventory objects.\n" +
           "RULES:\n" +
-          "- If the description mentions a specific removable garment (e.g. 'orange hoodie', 'leather jacket'), YOU MUST INCLUDE THAT GARMENT in the list.\n" + 
+          "- If the description mentions a specific removable garment (e.g. 'orange hoodie', 'leather jacket'), YOU MUST INCLUDE THAT GARMENT in the list.\n" +
           "- List other accessories or held items (e.g. hat, bracelet, satchel, notebook, pocket watch).\n" +
-          "- Avoid listing body parts. Only list removable, physical things.\n" +
-          "- Keep everything consistent with the world/era: no futuristic tech in historical settings, etc.\n" +
+          "- Avoid listing body parts.\n" +
+          "- Keep everything consistent with the world/era.\n" +
           "Respond with STRICT JSON ONLY of the form:\n" +
           '{ "items": ["item 1", "item 2", ...] }';
 
@@ -447,7 +445,7 @@ exports.handler = async (event) => {
           "VISUAL STYLE: always hyper-realistic photograph, 50mm lens, shallow depth of field, high dynamic range, natural cinematic lighting.\n" +
           "By default, keep events realistic; only allow overt magic in worlds that support it.\n" +
           "Narrative: 2–3 short paragraphs (120–220 words).\n" +
-          "Respond with STRICT JSON ONLY containing next_prompt, story, clicked_label_for_sprite.\n" +
+          "Respond with STRICT JSON ONLY containing next_prompt, story, clicked_label_for_sprite.\n\n" +
           "RULES FOR clicked_label_for_sprite:\n" +
           "- Set this ONLY if the narrative describes the player successfully acquiring a NEW physical item (e.g. picking something up, finding loot, or being handed an object).\n" +
           "- If the player merely talks to someone, looks at something, or moves, this MUST be null.\n" +
@@ -634,59 +632,33 @@ exports.handler = async (event) => {
     /* ------------------------------------------------------------------ */
     if (op === "equip_item_on_character") {
       const itemLabel = str(body.item_label) || "item";
-      const click = body.click || {};
-      const nx = Number(click.nx);
-      const ny = Number(click.ny);
-      const equipped_items = Array.isArray(body.equipped_items)
-        ? body.equipped_items
-        : [];
+      const targetSlot = str(body.target_slot) || "anywhere";
+      const equippedItemsStr = str(body.equipped_items) || "";
       const portraitUrl = str(body.current_portrait_url);
 
       try {
         const sys =
           "You are customizing a player-character portrait for a role-playing game.\n" +
-          "Your job is to decide whether an inventory item can be plausibly equipped at a requested location on the body, " +
-          "and if so, to describe a new image prompt that shows the same character in the same world with that item equipped.\n\n" +
-          "You must obey the persistent world constraints (historical era, technology, clothing) and keep everything hyper-realistic and photographic.\n" +
-          "Creative uses are allowed (e.g., a newspaper could be improvised into a skirt), but the result must still be physically possible and visually coherent.\n\n" +
-          "If the item clearly replaces an existing equipped item (for example swapping hats, belts, weapons, or handheld objects), " +
-          "you should mark the old item as replaced so it can be put back into the backpack.\n\n" +
-          "Respond with STRICT JSON ONLY in this form:\n" +
+          "The player wants to equip an inventory item into a specific body slot.\n" +
+          "1. Decide if the item logically fits into the requested slot (e.g. 'hat' fits 'head', 'boots' fit 'feet', 'sword' fits 'hand').\n" +
+          "2. If valid, generate a new prompt for the character wearing/holding the item in that slot.\n" +
+          "3. Maintain consistency: Keep the character's face, body type, and OTHER equipped items visible if possible.\n" +
+          "Respond with STRICT JSON ONLY:\n" +
           "{\n" +
           "  \"success\": true or false,\n" +
-          "  \"reason\": \"short explanation if success is false\",\n" +
-          "  \"next_prompt\": \"image prompt (<= 80 words) for the full-body portrait with the item equipped, if success is true\",\n" +
-          "  \"replaced_item_label\": \"name of an item that was replaced, or null if none\"\n" +
+          "  \"reason\": \"explanation if false\",\n" +
+          "  \"next_prompt\": \"full image prompt if true\"\n" +
           "}";
 
-        const coordText =
-          Number.isFinite(nx) && Number.isFinite(ny)
-            ? `The player clicked normalized portrait coordinates (x=${nx.toFixed(
-                2
-              )}, y=${ny.toFixed(
-                2
-              )}), where x=0,y=0 is top-left and x=1,y=1 is bottom-right.\n`
-            : "The player clicked somewhere on the portrait (exact coordinates unavailable).\n";
-
-        const equippedText = equipped_items.length
-          ? "Items already equipped on the character: " +
-            equipped_items.join(", ") +
-            ".\n"
-          : "No items are currently tracked as equipped on the character.\n";
-
         const baseText =
-          worldText +
-          playerSheetText +
-          equippedText +
-          `The player wants to equip the inventory item: "${itemLabel}".\n` +
-          coordText +
-          "Decide if equipping this item at that body area is physically plausible and visually coherent.\n" +
-          "- If it is clearly impossible (e.g., item would completely cover the character or defy physics), set success=false and explain why.\n" +
-          "- Otherwise set success=true and describe how the item appears: worn, held, draped, strapped on, etc.\n" +
-          "If success=true, produce an image prompt that shows the SAME character in the SAME world style, full-body, now with this item equipped. " +
-          "Do not change their age, body shape, or general appearance.\n" +
-          "If the new item naturally replaces one of the existing equipped_items (for example, a new hat replacing an old hat), set replaced_item_label to that item name; otherwise null.\n" +
-          "Use the reference portrait image to keep the character's face, clothing, and pose as consistent as possible.";
+          `World Context: ${worldText}\n` +
+          `Player Character: ${playerSheetText}\n` +
+          `Currently Worn: ${equippedItemsStr || "Nothing"}.\n\n` +
+          `REQUEST: Equip item "${itemLabel}" into slot "${targetSlot}".\n\n` +
+          "Task:\n" +
+          "- Verify if '${itemLabel}' can reasonably be worn/held in '${targetSlot}'.\n" +
+          "- If yes, write a hyper-realistic image prompt for the character with this new equipment.\n" +
+          "- If the slot implies replacing something (e.g. equipping a new hat on 'head'), assume the old one is removed.\n";
 
         const userContent = [{ type: "input_text", text: baseText }];
         if (portraitUrl) {
@@ -694,7 +666,7 @@ exports.handler = async (event) => {
         }
 
         const resp = await openai("responses", {
-          model: "gpt-4o-mini",
+          model: "gpt-4o",
           input: [
             { role: "system", content: [{ type: "input_text", text: sys }] },
             { role: "user", content: userContent },
@@ -702,27 +674,17 @@ exports.handler = async (event) => {
         });
 
         const parsed = extractJson(resp);
-        const success = !!parsed.success;
-        const reason = str(parsed.reason);
-        let next_prompt = str(parsed.next_prompt).trim();
-        const replaced_item_label = parsed.replaced_item_label || null;
-
-        if (!success) {
+        
+        if (!parsed.success) {
           return json200({
             equip_success: false,
-            reason: reason || "Item incompatible with the character or pose.",
+            reason: parsed.reason || "Item does not fit in that slot."
           });
         }
 
-        if (!next_prompt) {
-          next_prompt =
-            `Full-body portrait of the same player character in the same world, now using or wearing the ${itemLabel} ` +
-            "at the requested part of their body, hyper-realistic photograph.";
-        }
-
-        if (!next_prompt.toLowerCase().includes("hyper-realistic")) {
-          next_prompt += " " + GLOBAL_STYLE;
-        }
+        let next_prompt = str(parsed.next_prompt).trim();
+        if (!next_prompt) next_prompt = `${itemLabel} equipped on ${targetSlot}, hyper-realistic.`;
+        if (!next_prompt.toLowerCase().includes("hyper-realistic")) next_prompt += " " + GLOBAL_STYLE;
 
         const img = await openai("images/generations", {
           model: "gpt-image-1",
@@ -733,18 +695,13 @@ exports.handler = async (event) => {
         });
 
         const b64 = img.data?.[0]?.b64_json;
-        if (!b64)
-          return jsonErr(
-            "S701-EQUIP",
-            "No b64_json from equip generation"
-          );
-        const image_url = `data:image/png;base64,${b64}`;
-
+        if (!b64) return jsonErr("S701-EQUIP", "No image generated");
+        
         return json200({
           equip_success: true,
-          image_url,
-          replaced_item_label,
+          image_url: `data:image/png;base64,${b64}`
         });
+
       } catch (e) {
         return jsonErr("S701-EQUIP", e.message || String(e));
       }
