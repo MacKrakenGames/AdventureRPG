@@ -45,7 +45,7 @@ const els = {
   randomCharacterBtn: document.getElementById("randomCharacterBtn"),
   useCharacterBtn: document.getElementById("useCharacterBtn"),
   playerPortrait: document.getElementById("playerPortrait"),
-  playerCreatorForm: document.getElementById("playerCreatorForm"),
+  playerCreatorForm: document.getElementById("playerCreatorForm"), // Note: this ID does not exist in HTML, logic handles via charControls
 };
 
 // Canvas 2D context
@@ -133,7 +133,7 @@ let current = {
   isCharacter: false,
   characterName: null,
   characterSummary: null,
-  lootItemLabels: null, // when we generate per-character loot options
+  lootItemLabels: null,
 };
 
 let playerCharacter = null; // object from character creator
@@ -143,17 +143,19 @@ let npcs = []; // [{ name, summary }]
 const INTERACTION_MODES = ["wildcard", "pickup", "dialogue", "move"];
 let activeInteractionMode = "wildcard";
 
-// Backpack: 32 slots, now ONLY items
+// Backpack: 32 slots
 const BACKPACK_SLOTS = 32;
 let backpack = new Array(BACKPACK_SLOTS).fill(null);
 // activeSlotIndex: which backpack item is currently "in hand"
 let activeSlotIndex = null;
 
-// Equipped items on player portrait (labels only)
-let equippedItems = [];
-
-// Remember last equip click for the portrait
-let equipClick = null;
+// Equipped items logic (Fix 5)
+const WORN_SLOT_NAMES = [
+  "head", "hair", "ears", "neck",
+  "torso_1", "torso_2", "arms", "hands",
+  "legs_1", "legs_2", "feet", "accessory"
+];
+let wornItems = {}; // Map of slotName -> { label, spriteUrl }
 
 /* ------------------------------------------------------------------ */
 /* Rendering helpers                                                  */
@@ -193,6 +195,47 @@ function renderBackpack() {
     div.onclick = () => onBackpackSlotClick(i);
     els.backpackGrid.appendChild(div);
   }
+}
+
+function renderWornInventory() {
+  const grid = document.getElementById("wornSlotsGrid");
+  if (!grid) return;
+  grid.innerHTML = "";
+
+  WORN_SLOT_NAMES.forEach(slotKey => {
+    const item = wornItems[slotKey];
+    const div = document.createElement("div");
+    div.className = "backpack-slot"; // reuse existing style
+    div.title = `${slotKey}: ${item ? item.label : "empty"}`;
+    
+    // Visual label for the slot name (tiny)
+    const lbl = document.createElement("div");
+    lbl.style.position = "absolute";
+    lbl.style.top = "1px";
+    lbl.style.left = "2px";
+    lbl.style.fontSize = "0.5rem";
+    lbl.style.opacity = "0.6";
+    lbl.textContent = slotKey.replace(/_\d/, ""); // display "torso_1" as "torso"
+    div.appendChild(lbl);
+
+    if (item) {
+      if (item.spriteUrl) {
+        const img = document.createElement("img");
+        img.src = item.spriteUrl;
+        div.appendChild(img);
+      } else {
+        const span = document.createElement("span");
+        span.textContent = item.label.slice(0, 4);
+        div.appendChild(span);
+      }
+      div.style.borderColor = "#fbbf24"; // distinct color for equipped
+    } else {
+      div.style.opacity = "0.5";
+    }
+
+    div.onclick = () => onWornSlotClick(slotKey);
+    grid.appendChild(div);
+  });
 }
 
 function renderChoices() {
@@ -254,6 +297,7 @@ function onBackpackSlotClick(i) {
     activeSlotIndex = i;
   }
   renderBackpack();
+  renderWornInventory(); // refresh state if needed
 
   const active = activeSlotIndex != null ? backpack[activeSlotIndex] : null;
   if (!active) {
@@ -264,10 +308,10 @@ function onBackpackSlotClick(i) {
     return;
   }
 
-  setStatus(`Using item: ${active.label}. Click the scene or your portrait, then confirm/equip.`);
+  setStatus(`Using item: ${active.label}. Click the scene or an equipment slot.`);
   els.hud.textContent =
     `You ready the ${active.label} from your backpack.\n` +
-    `Click in the scene to use it there, or click your character portrait to try equipping it.`;
+    `Click in the scene to use it there, or click a Worn Item slot to equip it.`;
 }
 
 /* ------------------------------------------------------------------ */
@@ -425,8 +469,7 @@ async function onCanvasClick(evt) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Confirm selection: identify click, possibly branch into            */
-/* character-item targeting in pickup mode                            */
+/* Confirm selection                                                  */
 /* ------------------------------------------------------------------ */
 
 async function onConfirmSelection() {
@@ -435,13 +478,10 @@ async function onConfirmSelection() {
   els.confirmBtn.disabled = true;
   setStatus("Identifying your selection…");
   const { x, y } = current.clicked;
-
-  // Get marked image data URL from canvas
   const markedDataUrl = els.canvas.toDataURL("image/png");
 
   const activeTool = activeSlotIndex != null ? backpack[activeSlotIndex] : null;
-  const heldItemLabel =
-    activeTool && activeTool.type === "item" ? activeTool.label : null;
+  const heldItemLabel = activeTool && activeTool.type === "item" ? activeTool.label : null;
 
   try {
     const idResp = await postJSON("/.netlify/functions/openai", {
@@ -461,13 +501,8 @@ async function onConfirmSelection() {
     });
 
     const {
-      label,
-      options,
-      carryable,
-      stow_option_index,
-      is_character,
-      character_name,
-      character_summary,
+      label, options, carryable, stow_option_index,
+      is_character, character_name, character_summary
     } = idResp;
 
     current.labeled = label;
@@ -484,17 +519,9 @@ async function onConfirmSelection() {
 
     log(`Identified selection as: "${label}"`);
 
-    // SPECIAL BRANCH:
-    // If we are in PICKUP mode, no held tool, and the target is a CHARACTER,
-    // we ask a second helper which *specific* visible items can be looted.
-    if (
-      activeInteractionMode === "pickup" &&
-      !heldItemLabel &&
-      is_character
-    ) {
-      setStatus(
-        `You focus on: ${label}. Asking what visible items you might try to take…`
-      );
+    // Special Branch: Pickup Character Item
+    if (activeInteractionMode === "pickup" && !heldItemLabel && is_character) {
+      setStatus(`You focus on: ${label}. Asking what visible items you might try to take…`);
 
       let items = [];
       try {
@@ -512,33 +539,26 @@ async function onConfirmSelection() {
       }
 
       if (items.length) {
-        // Build options that map 1:1 to loot items
         current.lootItemLabels = items;
         current.options = items.map(
           (it) => `Try to quietly take the ${it} and add it to your belongings.`
         );
-        current.stowOptionIndex = null; // not using auto-stow index here
+        current.stowOptionIndex = null;
         current.carryable = true;
 
         els.hud.textContent =
           `You study ${label}, considering what you might walk away with.\n\n` +
           "Choose which specific thing you want to target. Your choice may have social consequences.";
         renderChoices();
-        setStatus(
-          `You focus on: ${label}. Choose a specific item to try to acquire.`
-        );
+        setStatus(`You focus on: ${label}. Choose a specific item to try to acquire.`);
         els.confirmBtn.disabled = true;
         return;
       }
-
-      // If helper failed, fall back to generic options
       log("No specific character items returned; falling back to generic pickup options.");
     }
 
-    // Default path: use options from identify_click
     current.options = options;
     renderChoices();
-
     setStatus(`You focus on: ${label}. Choose how you wish to interact with it.`);
     els.hud.textContent =
       `You focus on: ${label}.\n\n` +
@@ -572,8 +592,6 @@ async function onChooseOption(idx) {
 
   try {
     let clickedLabelForFollow = current.labeled;
-
-    // If we are in special character-loot mode, remap clickedLabel to the specific item
     if (usingLootTargetMode) {
       clickedLabelForFollow = current.lootItemLabels[idx];
     }
@@ -600,16 +618,10 @@ async function onChooseOption(idx) {
     };
     img.src = current.imageUrl;
 
-    // HUD story text goes below image in HTML
     els.hud.textContent = current.story || "";
+    log(`New scene created from selection "${clickedLabelForFollow}" with choice "${optionText}".`);
 
-    log(
-      `New scene created from selection "${clickedLabelForFollow}" with choice "${optionText}".`
-    );
-
-    // Backpack handling:
-    // 1) If we are in special character-loot mode: always treat as stowing that item.
-    // 2) Otherwise, use stow_option_index from identify_click if appropriate.
+    // Backpack handling
     let labelForBackpack = null;
     if (usingLootTargetMode) {
       labelForBackpack = clickedLabelForFollow;
@@ -643,9 +655,7 @@ async function onChooseOption(idx) {
           log(`Item "${labelForBackpack}" added to backpack slot ${slot + 1}.`);
         } catch (e) {
           log("E401-SPRITE: " + String(e));
-          setStatus(
-            `You tried to store "${labelForBackpack}", but something went wrong with icon generation.`
-          );
+          setStatus(`You tried to store "${labelForBackpack}", but icon generation failed.`);
         }
       }
     }
@@ -737,7 +747,7 @@ function randomChoice(arr) {
 }
 
 function randomizeCharacterForm() {
-  if (!els.ageRange) return; // safety if creator not present
+  if (!els.ageRange) return;
 
   const ages = ["early teens", "late teens", "twenties", "thirties"];
   const sexes = ["woman", "man"];
@@ -782,7 +792,6 @@ async function generatePlayerPortrait() {
 
     els.playerPortrait.src = resp.image_url;
     els.playerPortrait.style.display = "block";
-
     setStatus("Portrait generated. If you like this character, click “Use this character”.");
   } catch (e) {
     log("S601-CHAR: " + String(e));
@@ -794,126 +803,105 @@ async function generatePlayerPortrait() {
   }
 }
 
-
 function useCurrentCharacter() {
-  // 1. Lock in the data
   playerCharacter = collectPlayerSheetFromForm();
 
-  // 2. Hide the character creator form
-  // Note: We use "charControls" because that is the actual ID in index.html. 
-  // (The original code looked for "playerCreatorForm" which didn't exist).
+  // Fix 3: Proper ID usage
   const charControls = document.getElementById("charControls");
   if (charControls) {
     charControls.style.display = "none";
   }
-
-  // 3. Hide the "No portrait yet" hint text
   const playerHint = document.getElementById("playerHint");
   if (playerHint) {
     playerHint.style.display = "none";
-  }
-
-  // 4. Enable the "Equip" button now that a character is selected
-  const equipBtn = document.getElementById("equipBtn");
-  if (equipBtn) {
-    equipBtn.disabled = false;
   }
 
   setStatus("Player character locked in. Now generate a scene to begin role-playing.");
 }
 
 /* ------------------------------------------------------------------ */
-/* Equipping items on the character portrait                          */
+/* Equipping items on the character (Fix 5: Slot Logic)               */
 /* ------------------------------------------------------------------ */
 
-function onPortraitClick(evt) {
-  if (!els.playerPortrait || !els.playerPortrait.src) return;
-  if (activeSlotIndex == null) {
-    setStatus("Select an item from the backpack, then click the portrait to try equipping it.");
-    return;
-  }
-
-  const slot = backpack[activeSlotIndex];
-  if (!slot || slot.type !== "item") {
-    setStatus("Select an item from the backpack first.");
-    return;
-  }
-
-  const rect = els.playerPortrait.getBoundingClientRect();
-  const nx = (evt.clientX - rect.left) / rect.width;
-  const ny = (evt.clientY - rect.top) / rect.height;
-  equipClick = { nx, ny };
-
-  setStatus(`Equip attempt: ${slot.label} at (${nx.toFixed(2)}, ${ny.toFixed(2)}). Click “Equip item” if present, or trigger your equip action.`);
-  els.hud.textContent =
-    `You line the ${slot.label} up with part of your character's body.\n` +
-    "Use your equip control (if wired) to try putting it on. (In this MVP, equipping is usually triggered from another button.)";
-}
-
-// In your UI you might have a dedicated "Equip item" button wired to this.
-async function onEquipItem() {
-  if (activeSlotIndex == null) {
-    setStatus("Select an item from the backpack first.");
-    return;
-  }
-  const active = backpack[activeSlotIndex];
-  if (!active || active.type !== "item") {
-    setStatus("Select an item from the backpack first.");
-    return;
-  }
+async function onWornSlotClick(slotKey) {
+  // 1. Check if we have a portrait
   if (!els.playerPortrait || !els.playerPortrait.src) {
-    setStatus("Generate and select a player portrait first.");
-    return;
-  }
-  if (!equipClick) {
-    setStatus("Click on the portrait where you want the item to go, then try equipping again.");
+    setStatus("Generate a character portrait first.");
     return;
   }
 
-  setStatus(`Trying to equip ${active.label} on your character…`);
+  // 2. Check if we are holding an item from backpack
+  if (activeSlotIndex === null) {
+    const existing = wornItems[slotKey];
+    if (existing) {
+      setStatus(`Slot ${slotKey} contains: ${existing.label}.`);
+    } else {
+      setStatus(`Select an item from your backpack to equip to ${slotKey}.`);
+    }
+    return;
+  }
+
+  const backpackItem = backpack[activeSlotIndex];
+  if (!backpackItem || backpackItem.type !== "item") {
+    setStatus("That slot is empty.");
+    return;
+  }
+
+  // 3. Attempt to equip
+  setStatus(`Attempting to equip ${backpackItem.label} to ${slotKey}...`);
+  
+  const currentWornList = Object.entries(wornItems)
+    .map(([k, v]) => `${k}:${v.label}`)
+    .join(", ");
 
   try {
     const resp = await postJSON("/.netlify/functions/openai", {
       op: "equip_item_on_character",
       world_tag: current.worldTag,
-      world_description: WORLD_DESCRIPTIONS[current.worldTag],
       player_character: playerCharacter,
       current_portrait_url: els.playerPortrait.src,
-      item_label: active.label,
-      click: equipClick,
-      equipped_items: equippedItems,
+      item_label: backpackItem.label,
+      target_slot: slotKey,
+      equipped_items: currentWornList,
       quality: getQuality(),
     });
 
     if (!resp.equip_success) {
-      setStatus("Equip failed: " + (resp.reason || "item incompatible"));
+      setStatus("Equip failed: " + (resp.reason || "Item doesn't fit there."));
       return;
     }
 
     els.playerPortrait.src = resp.image_url;
-    setStatus(`Equipped ${active.label} on your character.`);
-
-    // Track equipped item, and if something was replaced, push replacement into backpack
-    if (!equippedItems.includes(active.label)) {
-      equippedItems.push(active.label);
-    }
-    if (resp.replaced_item_label) {
-      const slot = firstEmptyBackpackSlot();
-      if (slot !== -1) {
-        backpack[slot] = {
-          type: "item",
-          label: resp.replaced_item_label,
-          spriteUrl: null,
-        };
-      }
-    }
+    
+    // Update data
+    const oldItemInSlot = wornItems[slotKey];
+    wornItems[slotKey] = {
+      label: backpackItem.label,
+      spriteUrl: backpackItem.spriteUrl
+    };
 
     // Remove from backpack
     backpack[activeSlotIndex] = null;
     activeSlotIndex = null;
+
+    // Handle swap (old item back to backpack)
+    if (oldItemInSlot) {
+      let free = -1; 
+      for(let i=0; i<BACKPACK_SLOTS; i++) { if(!backpack[i]) { free=i; break; } }
+      if (free !== -1) {
+        backpack[free] = { type:"item", ...oldItemInSlot };
+        log(`Swapped ${oldItemInSlot.label} back to backpack.`);
+      } else {
+        log(`No room for ${oldItemInSlot.label}, it was discarded!`);
+      }
+    }
+
     renderBackpack();
+    renderWornInventory();
+    setStatus(`Successfully equipped ${backpackItem.label} on ${slotKey}.`);
+
   } catch (e) {
-    log("S701-EQUIP: " + String(e));
+    log("E702-EQUIP: " + String(e));
     setStatus("Error equipping item. See console.");
   }
 }
@@ -941,6 +929,10 @@ function resetAll() {
   npcs = [];
   backpack = new Array(BACKPACK_SLOTS).fill(null);
   activeSlotIndex = null;
+  
+  wornItems = {}; // Clear worn
+  renderWornInventory(); // Clear UI
+
   activeInteractionMode = "wildcard";
   renderBackpack();
   renderInteractModes();
@@ -959,18 +951,12 @@ function resetAll() {
 
 drawPlaceholder();
 renderBackpack();
+renderWornInventory();
 renderInteractModes();
 setViewButtonsDisabled(true);
-els.genBtn.disabled = true; // until a character is chosen or we decide to allow free start
-
-// Enable generate once we either pick a character or we allow immediate start.
-// For now, just allow immediate start.
 els.genBtn.disabled = false;
 
-// Canvas click
 els.canvas.addEventListener("click", onCanvasClick);
-
-// Buttons
 els.genBtn.addEventListener("click", generateImage);
 els.confirmBtn.addEventListener("click", onConfirmSelection);
 els.resetBtn.addEventListener("click", resetAll);
@@ -981,7 +967,6 @@ els.viewUpBtn.addEventListener("click", () => onChangeView("up"));
 els.viewDownBtn.addEventListener("click", () => onChangeView("down"));
 els.viewZoomOutBtn.addEventListener("click", () => onChangeView("zoom_out"));
 
-// Interact mode bar
 document.querySelectorAll("#interactRow .interact-slot").forEach((btn) => {
   btn.addEventListener("click", () => {
     const mode = btn.dataset.mode;
@@ -990,12 +975,10 @@ document.querySelectorAll("#interactRow .interact-slot").forEach((btn) => {
     renderInteractModes();
     switch (mode) {
       case "pickup":
-        setStatus(
-          "Pick-up mode: click near a small object—or part of a person whose clothing you want to target—then confirm."
-        );
+        setStatus("Pick-up mode: click near a small object or clothing to target, then confirm.");
         break;
       case "dialogue":
-        setStatus("Dialogue mode: click near a person or gathering to talk, then confirm.");
+        setStatus("Dialogue mode: click near a person to talk, then confirm.");
         break;
       case "move":
         setStatus("Move-to mode: click where you want to go, then confirm.");
@@ -1007,24 +990,11 @@ document.querySelectorAll("#interactRow .interact-slot").forEach((btn) => {
   });
 });
 
-// Character creator
-if (els.genPortraitBtn) {
-  els.genPortraitBtn.addEventListener("click", generatePlayerPortrait);
-}
+if (els.genPortraitBtn) els.genPortraitBtn.addEventListener("click", generatePlayerPortrait);
 if (els.randomCharacterBtn) {
   els.randomCharacterBtn.addEventListener("click", () => {
     randomizeCharacterForm();
     generatePlayerPortrait();
   });
 }
-if (els.useCharacterBtn) {
-  els.useCharacterBtn.addEventListener("click", useCurrentCharacter);
-}
-
-// Portrait click for equip targeting
-if (els.playerPortrait) {
-  els.playerPortrait.addEventListener("click", onPortraitClick);
-}
-
-// NOTE: if you have a dedicated "Equip item" button, wire it to onEquipItem()
-// e.g. document.getElementById("equipBtn").addEventListener("click", onEquipItem);
+if (els.useCharacterBtn) els.useCharacterBtn.addEventListener("click", useCurrentCharacter);
