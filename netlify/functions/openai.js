@@ -378,8 +378,11 @@ exports.handler = async (event) => {
           "You are assisting a point-and-click role-playing game.\n" +
           "The player has clicked on a specific character and wants to focus on acquiring items from that person's visible clothing, accessories, or handheld objects.\n\n" +
           "Given a description of the character and the world, list 3–6 distinct, visible items that could reasonably be treated as inventory objects (for example: hat, yellow tank top, denim shorts, bracelet, satchel, notebook, pocket watch).\n" +
-          "Avoid listing body parts. Only list removable, physical things.\n" +
-          "Keep everything consistent with the world/era: no futuristic tech in historical settings, etc.\n" +
+          "RULES:\n" +
+          "- If the description mentions a specific removable garment (e.g. 'orange hoodie', 'leather jacket'), YOU MUST INCLUDE THAT GARMENT in the list.\n" + 
+          "- List other accessories or held items (e.g. hat, bracelet, satchel, notebook, pocket watch).\n" +
+          "- Avoid listing body parts. Only list removable, physical things.\n" +
+          "- Keep everything consistent with the world/era: no futuristic tech in historical settings, etc.\n" +
           "Respond with STRICT JSON ONLY of the form:\n" +
           '{ "items": ["item 1", "item 2", ...] }';
 
