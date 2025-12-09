@@ -104,17 +104,17 @@
     #stageInner {
       position: relative;
       width: 100%;
-      padding-top: 100%;
+      padding-top: 100%; /* Square aspect ratio */
     }
     #imgCanvas {
       position: absolute;
       left: 0;
       top: 0;
       width: 100%;
-      height: auto;
-      aspect-ratio: 1 / 1;       /* keep it visually square */
+      height: 100%;
+      aspect-ratio: 1 / 1;
       display: block;
-      image-rendering: auto;
+      image-rendering: auto; /* Better for photos */
     }
     #hud {
       margin-top: 8px;
@@ -223,18 +223,6 @@
       max-height: 360px;
       background:#020617;
     }
-    #portraitMarker {
-      position: absolute;
-      width: 14px;
-      height: 14px;
-      border-radius: 50%;
-      border: 2px solid #38bdf8;
-      box-shadow: 0 0 0 1px rgba(15,23,42,0.9);
-      transform: translate(-50%, -50%);
-      pointer-events: none;
-      display: none;
-      background: rgba(15,23,42,0.4);
-    }
     #playerHint {
       font-size:0.75rem;
       margin-top:4px;
@@ -267,9 +255,7 @@
     <div id="status">Pick a world, then create your character.</div>
 
     <div class="row">
-      <!-- Left: scene & choices -->
       <div class="col card">
-        <!-- Scene selector -->
         <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:6px;">
           <label style="font-size:0.8rem;">
             World:
@@ -283,14 +269,12 @@
           <span style="font-size:0.75rem; opacity:0.75;">1) Choose world → 2) Create character → 3) Enter scene</span>
         </div>
 
-        <!-- Main controls -->
         <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center;">
           <button id="genBtn" class="btn" disabled>3) Enter scene</button>
           <button id="confirmBtn" class="btn" disabled>4) Confirm selection</button>
           <button id="resetBtn" class="btn">Reset run</button>
         </div>
 
-        <!-- View/navigation controls -->
         <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-top:6px; font-size:0.8rem;">
           <span>Look:</span>
           <button id="viewLeftBtn" class="btn" disabled>⬅ Left</button>
@@ -306,20 +290,16 @@
           </div>
         </div>
 
-        <!-- Story & guidance go here, under the image -->
         <div id="hud"></div>
 
         <div id="choices"></div>
       </div>
 
-      <!-- Right: player, backpack + console -->
       <div class="col">
-        <!-- Player character card -->
         <div class="card" style="margin-bottom:8px;">
           <h2>Player character</h2>
           <div class="subheading">Define your character, then generate a portrait. You can randomize until you like it.</div>
 
-          <!-- WRAPPED so we can hide after character chosen -->
           <div id="charControls">
             <div class="field-row">
               <label>
@@ -426,36 +406,31 @@
               <button id="randomCharacterBtn" class="btn">Random character</button>
               <button id="useCharacterBtn" class="btn" disabled>Use this character</button>
             </div>
-          </div><!-- /charControls -->
-
-          <div id="portraitWrapper">
+          </div><div id="portraitWrapper">
             <img id="playerPortrait" alt="Player portrait preview"/>
-            <div id="portraitMarker"></div>
           </div>
           <div id="playerHint">No portrait yet. Generate or randomize to see your character.</div>
 
-          <button id="equipBtn" class="btn" style="margin-top:6px; width:100%;" disabled>
-            Equip selected item on character
-          </button>
+          <div style="margin-top:8px;">
+            <strong>Worn Items</strong>
+            <div id="wornSlotsGrid" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-top: 4px;">
+              </div>
+          </div>
+
         </div>
 
-        <!-- Interact modes + Backpack -->
         <div class="card">
           <strong>Interact modes</strong>
           <div id="interactRow">
-            <!-- Wildcard / default cursor -->
             <button class="interact-slot active" data-mode="wildcard" title="Wildcard: general interaction">
               <span>✛</span>
             </button>
-            <!-- Pick up / loot -->
             <button class="interact-slot" data-mode="pickup" title="Pick up: focus on items to collect">
               <span>🧺</span>
             </button>
-            <!-- Dialogue / talk -->
             <button class="interact-slot" data-mode="dialogue" title="Dialogue: talk to people">
               <span>💬</span>
             </button>
-            <!-- Move / pathing -->
             <button class="interact-slot" data-mode="move" title="Move: choose where to go">
               <span>🚶</span>
             </button>
@@ -471,7 +446,6 @@
           <div id="backpackGrid"></div>
         </div>
 
-        <!-- Console -->
         <div class="card" style="margin-top:8px; max-width: 360px;">
           <strong>Console</strong>
           <div id="log"></div>
