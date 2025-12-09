@@ -794,12 +794,29 @@ async function generatePlayerPortrait() {
   }
 }
 
+
 function useCurrentCharacter() {
+  // 1. Lock in the data
   playerCharacter = collectPlayerSheetFromForm();
 
-  // Hide the dropdowns after character has been chosen (per your earlier request)
-  if (els.playerCreatorForm) {
-    els.playerCreatorForm.style.display = "none";
+  // 2. Hide the character creator form
+  // Note: We use "charControls" because that is the actual ID in index.html. 
+  // (The original code looked for "playerCreatorForm" which didn't exist).
+  const charControls = document.getElementById("charControls");
+  if (charControls) {
+    charControls.style.display = "none";
+  }
+
+  // 3. Hide the "No portrait yet" hint text
+  const playerHint = document.getElementById("playerHint");
+  if (playerHint) {
+    playerHint.style.display = "none";
+  }
+
+  // 4. Enable the "Equip" button now that a character is selected
+  const equipBtn = document.getElementById("equipBtn");
+  if (equipBtn) {
+    equipBtn.disabled = false;
   }
 
   setStatus("Player character locked in. Now generate a scene to begin role-playing.");
