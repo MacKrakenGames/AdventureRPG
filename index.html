@@ -116,6 +116,35 @@
       display: block;
       image-rendering: auto; /* Better for photos */
     }
+    .hud-toggle {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      z-index: 2;
+      width: 32px;
+      height: 32px;
+      padding: 0;
+      border-radius: 8px;
+      border: 1px solid #1f2937;
+      background: rgba(15, 23, 42, 0.85);
+      color: #e5e7eb;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 0.95rem;
+      transition: background 0.15s ease;
+    }
+    .hud-toggle:hover {
+      background: rgba(31, 41, 55, 0.95);
+    }
+    #stageHud {
+      transition: opacity 0.2s ease;
+    }
+    #stage.hud-hidden + #stageHud {
+      opacity: 0;
+      pointer-events: none;
+    }
     #hud {
       margin-top: 8px;
       font-size: 0.78rem;
@@ -286,13 +315,16 @@
 
         <div id="stage">
           <div id="stageInner">
+            <button id="hudToggle" class="hud-toggle" type="button" aria-pressed="true" title="Hide HUD" aria-label="Hide HUD">👁️</button>
             <canvas id="imgCanvas" width="512" height="512"></canvas>
           </div>
         </div>
 
-        <div id="hud"></div>
+        <div id="stageHud">
+          <div id="hud"></div>
 
-        <div id="choices"></div>
+          <div id="choices"></div>
+        </div>
       </div>
 
       <div class="col">

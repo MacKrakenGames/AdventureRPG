@@ -13,6 +13,8 @@ const els = {
   hud: document.getElementById("hud"),
   choices: document.getElementById("choices"),
   sceneSelect: document.getElementById("sceneSelect"),
+  stage: document.getElementById("stage"),
+  hudToggle: document.getElementById("hudToggle"),
 
   genBtn: document.getElementById("genBtn"),
   confirmBtn: document.getElementById("confirmBtn"),
@@ -138,6 +140,7 @@ let current = {
 
 let playerCharacter = null; // object from character creator
 let npcs = []; // [{ name, summary }]
+let hudVisible = true;
 
 // Interaction modes (4-slot bar)
 const INTERACTION_MODES = ["wildcard", "pickup", "dialogue", "move"];
@@ -906,6 +909,18 @@ async function onWornSlotClick(slotKey) {
   }
 }
 
+function syncHudVisibility() {
+  if (!els.stage) return;
+  els.stage.classList.toggle("hud-hidden", !hudVisible);
+  if (els.hudToggle) {
+    const label = hudVisible ? "Hide HUD" : "Show HUD";
+    els.hudToggle.setAttribute("aria-pressed", String(hudVisible));
+    els.hudToggle.setAttribute("aria-label", label);
+    els.hudToggle.title = label;
+    els.hudToggle.textContent = hudVisible ? "👁️" : "🙈";
+  }
+}
+
 /* ------------------------------------------------------------------ */
 /* Reset                                                              */
 /* ------------------------------------------------------------------ */
@@ -955,11 +970,18 @@ renderWornInventory();
 renderInteractModes();
 setViewButtonsDisabled(true);
 els.genBtn.disabled = false;
+syncHudVisibility();
 
 els.canvas.addEventListener("click", onCanvasClick);
 els.genBtn.addEventListener("click", generateImage);
 els.confirmBtn.addEventListener("click", onConfirmSelection);
 els.resetBtn.addEventListener("click", resetAll);
+if (els.hudToggle) {
+  els.hudToggle.addEventListener("click", () => {
+    hudVisible = !hudVisible;
+    syncHudVisibility();
+  });
+}
 
 els.viewLeftBtn.addEventListener("click", () => onChangeView("left"));
 els.viewRightBtn.addEventListener("click", () => onChangeView("right"));
