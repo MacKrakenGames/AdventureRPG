@@ -131,6 +131,47 @@
       max-width: 100%;
       justify-content: space-between;
     }
+    .view-arrow {
+      position: absolute;
+      min-width: 52px;
+      min-height: 40px;
+      padding: 6px 10px;
+      border-radius: 10px;
+      background: rgba(2, 6, 23, 0.78);
+      border: 1px solid rgba(31, 41, 55, 0.85);
+      color: #e5e7eb;
+      cursor: pointer;
+      pointer-events: auto;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.95rem;
+      backdrop-filter: blur(6px);
+    }
+    .view-arrow:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    .view-arrow--left {
+      left: 6px;
+      top: 50%;
+      transform: translateY(-50%);
+    }
+    .view-arrow--right {
+      right: 6px;
+      top: 50%;
+      transform: translateY(-50%);
+    }
+    .view-arrow--up {
+      top: 6px;
+      left: 50%;
+      transform: translateX(-50%);
+    }
+    .view-arrow--down {
+      bottom: 6px;
+      left: 50%;
+      transform: translateX(-50%);
+    }
     #imgCanvas {
       position: absolute;
       left: 0;
@@ -172,20 +213,21 @@
     #interactRow {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
-      gap: 4px;
+      gap: 8px;
       margin: 0;
     }
     
     .interact-slot {
       width: 100%;
-      aspect-ratio: 4 / 3;
-      border-radius: 6px;
+      min-height: 48px;
+      border-radius: 10px;
       border: 1px solid #1f2937;
-      background: #020617;
+      background: #0f172a;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 0.85rem;
+      font-size: 0.9rem;
+      letter-spacing: 0.01em;
       cursor: pointer;
     }
     
@@ -237,8 +279,9 @@
       position: relative;
       width: 100%;
       max-height: 360px;
-      overflow: hidden;
+      overflow: visible;
       margin-top: 4px;
+      padding: 18px 6px;
     }
     #playerPortrait {
       width: 100%;
@@ -262,6 +305,13 @@
       background: rgba(2, 6, 23, 0.75);
       border-radius: 10px;
       pointer-events: auto;
+    }
+    .portrait-connector {
+      position: absolute;
+      height: 2px;
+      background: rgba(148, 163, 184, 0.7);
+      transform-origin: 0% 50%;
+      pointer-events: none;
     }
     .portrait-slot.active {
       border-color: #38bdf8;
@@ -327,27 +377,27 @@
         <div id="stage">
           <div id="stageInner">
             <canvas id="imgCanvas" width="512" height="512"></canvas>
+            <button id="viewLeftBtn" class="view-arrow view-arrow--left" disabled aria-label="Look left">⬅</button>
+            <button id="viewRightBtn" class="view-arrow view-arrow--right" disabled aria-label="Look right">➡</button>
+            <button id="viewUpBtn" class="view-arrow view-arrow--up" disabled aria-label="Look up">⬆</button>
+            <button id="viewDownBtn" class="view-arrow view-arrow--down" disabled aria-label="Look down">⬇</button>
             <div class="stage-overlay">
               <div class="overlay-panel view-controls">
-                <button id="viewLeftBtn" class="btn" disabled>⬅ Left</button>
-                <button id="viewRightBtn" class="btn" disabled>Right ➡</button>
-                <button id="viewUpBtn" class="btn" disabled>⬆ Up</button>
-                <button id="viewDownBtn" class="btn" disabled>Down ⬇</button>
-                <button id="viewZoomOutBtn" class="btn" disabled>🔍 Zoom out</button>
+                <button id="viewZoomOutBtn" class="btn" disabled>Zoom out</button>
               </div>
               <div class="overlay-panel">
                 <div id="interactRow">
                   <button class="interact-slot active" data-mode="wildcard" title="Wildcard: general interaction">
-                    <span>✛</span>
+                    <span>Any</span>
                   </button>
                   <button class="interact-slot" data-mode="pickup" title="Pick up: focus on items to collect">
-                    <span>🧺</span>
+                    <span>Pick up</span>
                   </button>
                   <button class="interact-slot" data-mode="dialogue" title="Dialogue: talk to people">
-                    <span>💬</span>
+                    <span>Talk</span>
                   </button>
                   <button class="interact-slot" data-mode="move" title="Move: choose where to go">
-                    <span>🚶</span>
+                    <span>Move</span>
                   </button>
                 </div>
               </div>
