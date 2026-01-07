@@ -4,6 +4,36 @@
 // Canvas size (keep in sync with CSS)
 const W = 512;
 const H = 512;
+const SCENE_PLACEHOLDER_SRC = `data:image/svg+xml;utf8,${encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512">
+    <defs>
+      <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0%" stop-color="#0f172a"/>
+        <stop offset="100%" stop-color="#020617"/>
+      </linearGradient>
+    </defs>
+    <rect width="512" height="512" fill="url(#bg)"/>
+    <rect x="48" y="48" width="416" height="416" rx="24" fill="#111827" stroke="#1f2937" stroke-width="2"/>
+    <path d="M120 340 L220 220 L300 300 L380 200" stroke="#475569" stroke-width="6" fill="none" stroke-linecap="round"/>
+    <circle cx="175" cy="180" r="18" fill="#64748b"/>
+    <text x="256" y="420" font-family="system-ui, sans-serif" font-size="18" fill="#94a3b8" text-anchor="middle">Scene placeholder</text>
+  </svg>`
+)}`;
+const PORTRAIT_PLACEHOLDER_SRC = `data:image/svg+xml;utf8,${encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512">
+    <defs>
+      <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0%" stop-color="#0f172a"/>
+        <stop offset="100%" stop-color="#020617"/>
+      </linearGradient>
+    </defs>
+    <rect width="512" height="512" fill="url(#bg)"/>
+    <rect x="88" y="64" width="336" height="384" rx="28" fill="#111827" stroke="#1f2937" stroke-width="2"/>
+    <circle cx="256" cy="210" r="62" fill="#1f2937"/>
+    <rect x="180" y="280" width="152" height="120" rx="52" fill="#1f2937"/>
+    <text x="256" y="418" font-family="system-ui, sans-serif" font-size="18" fill="#94a3b8" text-anchor="middle">Character placeholder</text>
+  </svg>`
+)}`;
 
 // DOM references
 const els = {
@@ -52,6 +82,8 @@ const els = {
 const ctx = els.canvas.getContext("2d");
 els.canvas.width = W;
 els.canvas.height = H;
+const scenePlaceholderImg = new Image();
+scenePlaceholderImg.src = SCENE_PLACEHOLDER_SRC;
 
 // Simple logging helpers
 function setStatus(msg) {
@@ -155,6 +187,34 @@ const WORN_SLOT_NAMES = [
   "torso_1", "torso_2", "arms", "hands",
   "legs_1", "legs_2", "feet", "accessory"
 ];
+const WORN_SLOT_POSITIONS = {
+  head: { top: "6%", left: "14%" },
+  hair: { top: "6%", left: "86%" },
+  ears: { top: "16%", left: "92%" },
+  neck: { top: "22%", left: "8%" },
+  torso_1: { top: "36%", left: "86%" },
+  torso_2: { top: "46%", left: "14%" },
+  arms: { top: "42%", left: "6%" },
+  hands: { top: "50%", left: "94%" },
+  legs_1: { top: "68%", left: "12%" },
+  legs_2: { top: "68%", left: "88%" },
+  feet: { top: "86%", left: "18%" },
+  accessory: { top: "82%", left: "90%" },
+};
+const WORN_SLOT_ANCHORS = {
+  head: { top: "10%", left: "50%" },
+  hair: { top: "8%", left: "30%" },
+  ears: { top: "12%", left: "70%" },
+  neck: { top: "20%", left: "50%" },
+  torso_1: { top: "32%", left: "50%" },
+  torso_2: { top: "44%", left: "50%" },
+  arms: { top: "34%", left: "24%" },
+  hands: { top: "46%", left: "76%" },
+  legs_1: { top: "62%", left: "40%" },
+  legs_2: { top: "62%", left: "60%" },
+  feet: { top: "82%", left: "50%" },
+  accessory: { top: "72%", left: "78%" },
+};
 let wornItems = {}; // Map of slotName -> { label, spriteUrl }
 
 /* ------------------------------------------------------------------ */
@@ -198,16 +258,48 @@ function renderBackpack() {
 }
 
 function renderWornInventory() {
-  const grid = document.getElementById("wornSlotsGrid");
-  if (!grid) return;
-  grid.innerHTML = "";
+  const overlay = document.getElementById("portraitSlots");
+  if (!overlay) return;
+  overlay.innerHTML = "";
+  const overlayRect = overlay.getBoundingClientRect();
+  const hasRect = overlayRect.width > 0 && overlayRect.height > 0;
+  const toPixels = (pos) => {
+    const left = parseFloat(pos.left || "50");
+    const top = parseFloat(pos.top || "50");
+    return {
+      x: (left / 100) * overlayRect.width,
+      y: (top / 100) * overlayRect.height,
+    };
+  };
 
-  WORN_SLOT_NAMES.forEach(slotKey => {
+  WORN_SLOT_NAMES.forEach((slotKey) => {
     const item = wornItems[slotKey];
     const div = document.createElement("div");
-    div.className = "backpack-slot"; // reuse existing style
+    div.className = "backpack-slot portrait-slot";
     div.title = `${slotKey}: ${item ? item.label : "empty"}`;
-    
+
+    const pos = WORN_SLOT_POSITIONS[slotKey] || { top: "50%", left: "50%" };
+    div.style.top = pos.top;
+    div.style.left = pos.left;
+
+    if (hasRect) {
+      const anchor = WORN_SLOT_ANCHORS[slotKey] || pos;
+      const anchorPx = toPixels(anchor);
+      const slotPx = toPixels(pos);
+      const dx = slotPx.x - anchorPx.x;
+      const dy = slotPx.y - anchorPx.y;
+      const length = Math.hypot(dx, dy);
+      const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+
+      const connector = document.createElement("div");
+      connector.className = "portrait-connector";
+      connector.style.left = `${anchorPx.x}px`;
+      connector.style.top = `${anchorPx.y}px`;
+      connector.style.width = `${length}px`;
+      connector.style.transform = `rotate(${angle}deg)`;
+      overlay.appendChild(connector);
+    }
+
     // Visual label for the slot name (tiny)
     const lbl = document.createElement("div");
     lbl.style.position = "absolute";
@@ -215,7 +307,7 @@ function renderWornInventory() {
     lbl.style.left = "2px";
     lbl.style.fontSize = "0.5rem";
     lbl.style.opacity = "0.6";
-    lbl.textContent = slotKey.replace(/_\d/, ""); // display "torso_1" as "torso"
+    lbl.textContent = slotKey.replace(/_\d/, "");
     div.appendChild(lbl);
 
     if (item) {
@@ -228,13 +320,13 @@ function renderWornInventory() {
         span.textContent = item.label.slice(0, 4);
         div.appendChild(span);
       }
-      div.style.borderColor = "#fbbf24"; // distinct color for equipped
+      div.style.borderColor = "#fbbf24";
     } else {
       div.style.opacity = "0.5";
     }
 
     div.onclick = () => onWornSlotClick(slotKey);
-    grid.appendChild(div);
+    overlay.appendChild(div);
   });
 }
 
@@ -250,12 +342,19 @@ function renderChoices() {
 }
 
 function drawPlaceholder() {
-  ctx.fillStyle = "#020617";
-  ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = "#64748b";
-  ctx.font = "16px system-ui, sans-serif";
-  ctx.textAlign = "center";
-  ctx.fillText("Generate an image to begin.", W / 2, H / 2);
+  if (scenePlaceholderImg.complete) {
+    ctx.drawImage(scenePlaceholderImg, 0, 0, W, H);
+    return;
+  }
+  scenePlaceholderImg.onload = () => {
+    ctx.drawImage(scenePlaceholderImg, 0, 0, W, H);
+  };
+}
+
+function setPortraitPlaceholder() {
+  if (!els.playerPortrait) return;
+  els.playerPortrait.src = PORTRAIT_PLACEHOLDER_SRC;
+  els.playerPortrait.style.display = "block";
 }
 
 /* ------------------------------------------------------------------ */
@@ -937,6 +1036,7 @@ function resetAll() {
   renderBackpack();
   renderInteractModes();
   drawPlaceholder();
+  setPortraitPlaceholder();
   clearLog();
   setViewButtonsDisabled(true);
   els.confirmBtn.disabled = true;
@@ -950,6 +1050,7 @@ function resetAll() {
 /* ------------------------------------------------------------------ */
 
 drawPlaceholder();
+setPortraitPlaceholder();
 renderBackpack();
 renderWornInventory();
 renderInteractModes();
@@ -998,3 +1099,11 @@ if (els.randomCharacterBtn) {
   });
 }
 if (els.useCharacterBtn) els.useCharacterBtn.addEventListener("click", useCurrentCharacter);
+if (els.playerPortrait) {
+  els.playerPortrait.addEventListener("load", () => {
+    renderWornInventory();
+  });
+}
+window.addEventListener("resize", () => {
+  renderWornInventory();
+});
