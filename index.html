@@ -106,6 +106,31 @@
       width: 100%;
       padding-top: 100%; /* Square aspect ratio */
     }
+    .stage-overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 8px;
+      pointer-events: none;
+    }
+    .overlay-panel {
+      display: inline-flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      align-items: center;
+      background: rgba(2, 6, 23, 0.7);
+      border: 1px solid rgba(31, 41, 55, 0.8);
+      border-radius: 10px;
+      padding: 6px;
+      backdrop-filter: blur(6px);
+      pointer-events: auto;
+    }
+    .view-controls {
+      max-width: 100%;
+      justify-content: space-between;
+    }
     #imgCanvas {
       position: absolute;
       left: 0;
@@ -143,12 +168,12 @@
       margin-top: 6px;
     }
     strong { font-size: 0.85rem; }
-    /* 4x1 interaction mode bar above the backpack */
+    /* 4x1 interaction mode bar overlayed on the scene */
     #interactRow {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
       gap: 4px;
-      margin-top: 6px;
+      margin: 0;
     }
     
     .interact-slot {
@@ -223,6 +248,25 @@
       max-height: 360px;
       background:#020617;
     }
+    #portraitSlots {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+    .portrait-slot {
+      position: absolute;
+      width: clamp(34px, 10vw, 52px);
+      height: clamp(34px, 10vw, 52px);
+      transform: translate(-50%, -50%);
+      border: 1px solid rgba(31, 41, 55, 0.85);
+      background: rgba(2, 6, 23, 0.75);
+      border-radius: 10px;
+      pointer-events: auto;
+    }
+    .portrait-slot.active {
+      border-color: #38bdf8;
+      box-shadow: 0 0 0 1px rgba(56,189,248,0.6);
+    }
     #playerHint {
       font-size:0.75rem;
       margin-top:4px;
@@ -277,16 +321,37 @@
 
         <div style="display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-top:6px; font-size:0.8rem;">
           <span>Look:</span>
-          <button id="viewLeftBtn" class="btn" disabled>⬅ Left</button>
-          <button id="viewRightBtn" class="btn" disabled>Right ➡</button>
-          <button id="viewUpBtn" class="btn" disabled>⬆ Up</button>
-          <button id="viewDownBtn" class="btn" disabled>Down ⬇</button>
-          <button id="viewZoomOutBtn" class="btn" disabled>🔍 Zoom out</button>
+          <span style="opacity:0.7;">Use the overlay controls on the scene.</span>
         </div>
 
         <div id="stage">
           <div id="stageInner">
             <canvas id="imgCanvas" width="512" height="512"></canvas>
+            <div class="stage-overlay">
+              <div class="overlay-panel view-controls">
+                <button id="viewLeftBtn" class="btn" disabled>⬅ Left</button>
+                <button id="viewRightBtn" class="btn" disabled>Right ➡</button>
+                <button id="viewUpBtn" class="btn" disabled>⬆ Up</button>
+                <button id="viewDownBtn" class="btn" disabled>Down ⬇</button>
+                <button id="viewZoomOutBtn" class="btn" disabled>🔍 Zoom out</button>
+              </div>
+              <div class="overlay-panel">
+                <div id="interactRow">
+                  <button class="interact-slot active" data-mode="wildcard" title="Wildcard: general interaction">
+                    <span>✛</span>
+                  </button>
+                  <button class="interact-slot" data-mode="pickup" title="Pick up: focus on items to collect">
+                    <span>🧺</span>
+                  </button>
+                  <button class="interact-slot" data-mode="dialogue" title="Dialogue: talk to people">
+                    <span>💬</span>
+                  </button>
+                  <button class="interact-slot" data-mode="move" title="Move: choose where to go">
+                    <span>🚶</span>
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -408,36 +473,22 @@
             </div>
           </div><div id="portraitWrapper">
             <img id="playerPortrait" alt="Player portrait preview"/>
+            <div id="portraitSlots"></div>
           </div>
           <div id="playerHint">No portrait yet. Generate or randomize to see your character.</div>
 
           <div style="margin-top:8px;">
             <strong>Worn Items</strong>
-            <div id="wornSlotsGrid" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-top: 4px;">
-              </div>
+            <div style="font-size:0.72rem; opacity:0.75; margin-top:4px;">
+              Click a body slot on the portrait to equip items.
+            </div>
           </div>
 
         </div>
 
         <div class="card">
-          <strong>Interact modes</strong>
-          <div id="interactRow">
-            <button class="interact-slot active" data-mode="wildcard" title="Wildcard: general interaction">
-              <span>✛</span>
-            </button>
-            <button class="interact-slot" data-mode="pickup" title="Pick up: focus on items to collect">
-              <span>🧺</span>
-            </button>
-            <button class="interact-slot" data-mode="dialogue" title="Dialogue: talk to people">
-              <span>💬</span>
-            </button>
-            <button class="interact-slot" data-mode="move" title="Move: choose where to go">
-              <span>🚶</span>
-            </button>
-          </div>
-
-          <div style="margin-top:6px; font-size:0.75rem; opacity:0.8;">
-            Choose how you intend to interact, then click in the scene. Backpack items still work as tools on top of that.
+          <div style="font-size:0.75rem; opacity:0.8; margin-bottom:6px;">
+            Choose how you intend to interact using the overlay on the scene. Backpack items still work as tools on top of that.
           </div>
 
           <div style="margin-top:8px;">

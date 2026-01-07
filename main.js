@@ -155,6 +155,20 @@ const WORN_SLOT_NAMES = [
   "torso_1", "torso_2", "arms", "hands",
   "legs_1", "legs_2", "feet", "accessory"
 ];
+const WORN_SLOT_POSITIONS = {
+  head: { top: "10%", left: "50%" },
+  hair: { top: "8%", left: "30%" },
+  ears: { top: "12%", left: "70%" },
+  neck: { top: "20%", left: "50%" },
+  torso_1: { top: "32%", left: "50%" },
+  torso_2: { top: "44%", left: "50%" },
+  arms: { top: "34%", left: "24%" },
+  hands: { top: "46%", left: "76%" },
+  legs_1: { top: "62%", left: "40%" },
+  legs_2: { top: "62%", left: "60%" },
+  feet: { top: "82%", left: "50%" },
+  accessory: { top: "72%", left: "78%" },
+};
 let wornItems = {}; // Map of slotName -> { label, spriteUrl }
 
 /* ------------------------------------------------------------------ */
@@ -198,16 +212,20 @@ function renderBackpack() {
 }
 
 function renderWornInventory() {
-  const grid = document.getElementById("wornSlotsGrid");
-  if (!grid) return;
-  grid.innerHTML = "";
+  const overlay = document.getElementById("portraitSlots");
+  if (!overlay) return;
+  overlay.innerHTML = "";
 
-  WORN_SLOT_NAMES.forEach(slotKey => {
+  WORN_SLOT_NAMES.forEach((slotKey) => {
     const item = wornItems[slotKey];
     const div = document.createElement("div");
-    div.className = "backpack-slot"; // reuse existing style
+    div.className = "backpack-slot portrait-slot";
     div.title = `${slotKey}: ${item ? item.label : "empty"}`;
-    
+
+    const pos = WORN_SLOT_POSITIONS[slotKey] || { top: "50%", left: "50%" };
+    div.style.top = pos.top;
+    div.style.left = pos.left;
+
     // Visual label for the slot name (tiny)
     const lbl = document.createElement("div");
     lbl.style.position = "absolute";
@@ -215,7 +233,7 @@ function renderWornInventory() {
     lbl.style.left = "2px";
     lbl.style.fontSize = "0.5rem";
     lbl.style.opacity = "0.6";
-    lbl.textContent = slotKey.replace(/_\d/, ""); // display "torso_1" as "torso"
+    lbl.textContent = slotKey.replace(/_\d/, "");
     div.appendChild(lbl);
 
     if (item) {
@@ -228,13 +246,13 @@ function renderWornInventory() {
         span.textContent = item.label.slice(0, 4);
         div.appendChild(span);
       }
-      div.style.borderColor = "#fbbf24"; // distinct color for equipped
+      div.style.borderColor = "#fbbf24";
     } else {
       div.style.opacity = "0.5";
     }
 
     div.onclick = () => onWornSlotClick(slotKey);
-    grid.appendChild(div);
+    overlay.appendChild(div);
   });
 }
 
