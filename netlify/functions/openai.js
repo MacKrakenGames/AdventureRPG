@@ -114,6 +114,19 @@ exports.handler = async (event) => {
         ? rawInteractionMode
         : "wildcard";
 
+    const rawViewMode = body.view_mode;
+    const viewMode =
+      typeof rawViewMode === "string" &&
+      ["first_person", "third_person", "top_down_isometric"].includes(rawViewMode)
+        ? rawViewMode
+        : "first_person";
+    const viewModeText =
+      viewMode === "third_person"
+        ? "Camera mode: third-person view with the player character visible in-frame when practical.\n"
+        : viewMode === "top_down_isometric"
+        ? "Camera mode: top-down isometric angled overhead view.\n"
+        : "Camera mode: first-person viewpoint through the player character's eyes.\n";
+
     // Common context
     const worldTag = str(body.world_tag);
     const worldDesc = str(body.world_description);
@@ -434,6 +447,8 @@ exports.handler = async (event) => {
       const label = str(body.clicked_label) || "object";
       const action = str(body.interaction_choice) || "";
       const prior = str(body.prior_prompt) || "A scene.";
+      const priorSceneImageUrl = str(body.prior_scene_image_url);
+      const currentCharacterImageUrl = str(body.current_character_image_url);
 
       try {
         const sys =
@@ -459,18 +474,28 @@ exports.handler = async (event) => {
 
         const userText =
           worldText +
+          viewModeText +
           npcText +
           playerSheetText +
           `Prior scene prompt (hyper-real photo style):\n${prior}\n\n` +
+          "Reference images are attached: the previous scene image first, then the current player-character portrait. Keep continuity with both.\n\n" +
           `The player clicked on: ${label}\n` +
           (action ? `They chose to: ${action}\n\n` : "\n") +
           "Describe what happens as a result and what the player now sees, then provide the new image prompt and optional clicked_label_for_sprite in JSON.";
+
+        const userContent = [{ type: "input_text", text: userText }];
+        if (priorSceneImageUrl) {
+          userContent.push({ type: "input_image", image_url: priorSceneImageUrl });
+        }
+        if (currentCharacterImageUrl) {
+          userContent.push({ type: "input_image", image_url: currentCharacterImageUrl });
+        }
 
         const resp = await openai("responses", {
           model: "gpt-4o-mini",
           input: [
             { role: "system", content: [{ type: "input_text", text: sys }] },
-            { role: "user", content: [{ type: "input_text", text: userText }] },
+            { role: "user", content: userContent },
           ],
         });
 
@@ -555,6 +580,8 @@ exports.handler = async (event) => {
     if (op === "change_view") {
       const direction = str(body.direction) || "left";
       const prior = str(body.prior_prompt) || "A scene.";
+      const priorSceneImageUrl = str(body.prior_scene_image_url);
+      const currentCharacterImageUrl = str(body.current_character_image_url);
 
       try {
         const sys =
@@ -574,17 +601,27 @@ exports.handler = async (event) => {
 
         const userText =
           worldText +
+          viewModeText +
           npcText +
           playerSheetText +
           `Prior scene prompt (hyper-real photo style):\n${prior}\n\n` +
+          "Reference images are attached: the previous scene image first, then the current player-character portrait. Keep continuity with both.\n\n" +
           `The player chooses to look: ${direction}.\n` +
           "Describe the new view and what is visible, then provide the image prompt in JSON.";
+
+        const userContent = [{ type: "input_text", text: userText }];
+        if (priorSceneImageUrl) {
+          userContent.push({ type: "input_image", image_url: priorSceneImageUrl });
+        }
+        if (currentCharacterImageUrl) {
+          userContent.push({ type: "input_image", image_url: currentCharacterImageUrl });
+        }
 
         const resp = await openai("responses", {
           model: "gpt-4o-mini",
           input: [
             { role: "system", content: [{ type: "input_text", text: sys }] },
-            { role: "user", content: [{ type: "input_text", text: userText }] },
+            { role: "user", content: userContent },
           ],
         });
 
