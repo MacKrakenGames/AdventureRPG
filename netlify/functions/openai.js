@@ -122,9 +122,9 @@ exports.handler = async (event) => {
         : "first_person";
     const viewModeText =
       viewMode === "third_person"
-        ? "Camera mode: third-person view with the player character visible in-frame when practical.\n"
+        ? "Camera mode: strict third-person view. The player character MUST be visible, centered in frame, and shown from behind (back view). Match face/body/hair/clothing identity from the provided character reference image.\n"
         : viewMode === "top_down_isometric"
-        ? "Camera mode: top-down isometric angled overhead view.\n"
+        ? "Camera mode: strict top-down isometric angled overhead view. The player character MUST be visible, centered in frame, and shown from top/back. Match body/hair/clothing identity from the provided character reference image.\n"
         : "Camera mode: first-person viewpoint through the player character's eyes.\n";
 
     // Common context
@@ -457,6 +457,7 @@ exports.handler = async (event) => {
           "1) Describe the immediate consequence of that choice and the new scene that unfolds.\n" +
           "2) Produce a concrete image generation prompt for the new scene.\n\n" +
           "All scenes must remain consistent with the world constraints.\n" +
+          "When camera mode is third-person or top-down isometric, do not invent a random character: render the same player character from the reference image, centered in frame, from the required angle.\n" +
           "VISUAL STYLE: always hyper-realistic photograph, 50mm lens, shallow depth of field, high dynamic range, natural cinematic lighting.\n" +
           "By default, keep events realistic; only allow overt magic in worlds that support it.\n" +
           "Narrative: 2–3 short paragraphs (120–220 words).\n" +
@@ -589,6 +590,7 @@ exports.handler = async (event) => {
           "Given a prior scene prompt, a view direction, persistent world constraints, a player-character sheet, and NPC character sheets, you must:\n" +
           "1) Describe how the camera shifts (left/right/up/down/zoom out) while staying in the same location or immediate area.\n" +
           "2) Produce a concrete image generation prompt for the new viewpoint.\n\n" +
+          "When camera mode is third-person or top-down isometric, do not invent a random character: render the same player character from the reference image, centered in frame, from the required angle.\n" +
           "Always keep world/era consistent and maintain a hyper-realistic photographic style.\n" +
           "Narrative: 2–3 short paragraphs (120–220 words).\n" +
           "Respond with STRICT JSON ONLY containing next_prompt and story.";

@@ -343,8 +343,8 @@ function renderViewModeButtons() {
 }
 
 function viewModeInstruction(mode) {
-  if (mode === "third_person") return "Third-person perspective with the player character visible in frame.";
-  if (mode === "top_down_isometric") return "Top-down isometric perspective from an angled overhead camera.";
+  if (mode === "third_person") return "Third-person over-the-shoulder perspective. The player character is centered, seen from behind, and matches the existing character portrait identity and outfit.";
+  if (mode === "top_down_isometric") return "Top-down isometric perspective. Include the player character centered in frame from a top/back angle, matching the existing character portrait identity and outfit.";
   return "First-person perspective from the player character's eyes.";
 }
 
@@ -745,6 +745,11 @@ async function onChangeView(direction) {
     current.lootItemLabels = null;
     renderChoices();
     els.confirmBtn.disabled = true;
+    if (direction === "mode_change") {
+      setStatus(`View mode switched to ${current.viewMode.replaceAll("_", " ")}.`);
+    } else {
+      setStatus(`View shifted ${direction}.`);
+    }
   } catch (e) {
     log("S501-VIEW: " + String(e));
     setStatus("Error changing view. See console.");
