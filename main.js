@@ -23,6 +23,9 @@ const els = {
   viewUpBtn: document.getElementById("viewUpBtn"),
   viewDownBtn: document.getElementById("viewDownBtn"),
   viewZoomOutBtn: document.getElementById("viewZoomOutBtn"),
+  viewModeFirstBtn: document.getElementById("viewModeFirstBtn"),
+  viewModeThirdBtn: document.getElementById("viewModeThirdBtn"),
+  viewModeIsoBtn: document.getElementById("viewModeIsoBtn"),
 
   backpackGrid: document.getElementById("backpackGrid"),
   interactRow: document.getElementById("interactRow"),
@@ -134,6 +137,7 @@ let current = {
   characterName: null,
   characterSummary: null,
   lootItemLabels: null,
+  viewMode: "first_person",
 };
 
 let playerCharacter = null; // object from character creator
@@ -326,6 +330,24 @@ function setViewButtonsDisabled(disabled) {
   els.viewZoomOutBtn.disabled = disabled;
 }
 
+function renderViewModeButtons() {
+  const pairs = [
+    [els.viewModeFirstBtn, "first_person"],
+    [els.viewModeThirdBtn, "third_person"],
+    [els.viewModeIsoBtn, "top_down_isometric"],
+  ];
+  pairs.forEach(([btn, mode]) => {
+    if (!btn) return;
+    btn.classList.toggle("active", current.viewMode === mode);
+  });
+}
+
+function viewModeInstruction(mode) {
+  if (mode === "third_person") return "Third-person over-the-shoulder perspective. The player character is centered, seen from behind, and matches the existing character portrait identity and outfit.";
+  if (mode === "top_down_isometric") return "Top-down isometric perspective. Include the player character centered in frame from a top/back angle, matching the existing character portrait identity and outfit.";
+  return "First-person perspective from the player character's eyes.";
+}
+
 /* ------------------------------------------------------------------ */
 /* Scene generation                                                   */
 /* ------------------------------------------------------------------ */
@@ -338,7 +360,7 @@ async function generateImage() {
   els.confirmBtn.disabled = true;
 
   const starter = WORLD_STARTERS[current.worldTag] || WORLD_STARTERS.western;
-  const basePrompt = `${starter} Hyper-realistic photograph, camera-quality image.`;
+  const basePrompt = `${starter} ${viewModeInstruction(current.viewMode)} Hyper-realistic photograph, camera-quality image.`;
   current.prompt = basePrompt;
 
   try {
@@ -348,6 +370,7 @@ async function generateImage() {
       world_tag: current.worldTag,
       world_description: WORLD_DESCRIPTIONS[current.worldTag],
       player_character: playerCharacter,
+      view_mode: current.viewMode,
       quality: getQuality(),
     });
 
@@ -601,10 +624,13 @@ async function onChooseOption(idx) {
       clicked_label: clickedLabelForFollow,
       interaction_choice: optionText,
       prior_prompt: current.prompt,
+      prior_scene_image_url: current.imageUrl,
+      current_character_image_url: els.playerPortrait?.src || null,
       world_tag: current.worldTag,
       world_description: WORLD_DESCRIPTIONS[current.worldTag],
       npcs: getNpcArray(),
       player_character: playerCharacter,
+      view_mode: current.viewMode,
       quality: getQuality(),
     });
 
@@ -691,10 +717,13 @@ async function onChangeView(direction) {
       op: "change_view",
       direction,
       prior_prompt: current.prompt,
+      prior_scene_image_url: current.imageUrl,
+      current_character_image_url: els.playerPortrait?.src || null,
       world_tag: current.worldTag,
       world_description: WORLD_DESCRIPTIONS[current.worldTag],
       npcs: getNpcArray(),
       player_character: playerCharacter,
+      view_mode: current.viewMode,
       quality: getQuality(),
     });
 
@@ -716,12 +745,28 @@ async function onChangeView(direction) {
     current.lootItemLabels = null;
     renderChoices();
     els.confirmBtn.disabled = true;
+    if (direction === "mode_change") {
+      setStatus(`View mode switched to ${current.viewMode.replaceAll("_", " ")}.`);
+    } else {
+      setStatus(`View shifted ${direction}.`);
+    }
   } catch (e) {
     log("S501-VIEW: " + String(e));
     setStatus("Error changing view. See console.");
   } finally {
     setViewButtonsDisabled(false);
   }
+}
+
+async function onChangeViewMode(mode) {
+  if (!mode || mode === current.viewMode) return;
+  current.viewMode = mode;
+  renderViewModeButtons();
+  if (!current.imageUrl || !current.prompt) {
+    setStatus(`View mode set to ${mode.replaceAll("_", " ")}.`);
+    return;
+  }
+  await onChangeView("mode_change");
 }
 
 /* ------------------------------------------------------------------ */
@@ -966,6 +1011,10 @@ els.viewRightBtn.addEventListener("click", () => onChangeView("right"));
 els.viewUpBtn.addEventListener("click", () => onChangeView("up"));
 els.viewDownBtn.addEventListener("click", () => onChangeView("down"));
 els.viewZoomOutBtn.addEventListener("click", () => onChangeView("zoom_out"));
+els.viewModeFirstBtn.addEventListener("click", () => onChangeViewMode("first_person"));
+els.viewModeThirdBtn.addEventListener("click", () => onChangeViewMode("third_person"));
+els.viewModeIsoBtn.addEventListener("click", () => onChangeViewMode("top_down_isometric"));
+renderViewModeButtons();
 
 document.querySelectorAll("#interactRow .interact-slot").forEach((btn) => {
   btn.addEventListener("click", () => {
