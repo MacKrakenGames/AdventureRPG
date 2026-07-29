@@ -82,6 +82,7 @@ function str(v) {
 
 const GLOBAL_STYLE =
   "hyper-realistic photograph, 50mm lens, shallow depth of field, high dynamic range, natural cinematic lighting, camera-quality image, not a painting, not a drawing, not an illustration.";
+const IMAGE_MODEL = "gpt-image-1.5";
 
 exports.handler = async (event) => {
   try {
@@ -168,7 +169,7 @@ exports.handler = async (event) => {
 
       try {
         const img = await openai("images/generations", {
-          model: "gpt-image-1",
+          model: IMAGE_MODEL,
           prompt,
           n: 1,
           size: "1024x1024",
@@ -224,7 +225,7 @@ exports.handler = async (event) => {
 
       try {
         const img = await openai("images/generations", {
-          model: "gpt-image-1",
+          model: IMAGE_MODEL,
           prompt,
           n: 1,
           size: "1024x1536",
@@ -521,7 +522,7 @@ exports.handler = async (event) => {
           "You follow through on your decision, and the scene shifts around you. The consequences settle into place as you take in your new surroundings, which still feel like a natural extension of where you were moments before.";
 
         const img = await openai("images/generations", {
-          model: "gpt-image-1",
+          model: IMAGE_MODEL,
           prompt: next_prompt,
           n: 1,
           size: "1024x1024",
@@ -553,7 +554,7 @@ exports.handler = async (event) => {
           "no extra objects, clean outline, suitable as an inventory icon, transparent background.";
 
         const img = await openai("images/generations", {
-          model: "gpt-image-1",
+          model: IMAGE_MODEL,
           prompt,
           n: 1,
           size: "1024x1024",
@@ -645,7 +646,7 @@ exports.handler = async (event) => {
           "You shift your gaze and the frame of the scene widens, revealing details that were previously hidden just outside your focus, all of them clearly belonging to the same place you were standing moments ago.";
 
         const img = await openai("images/generations", {
-          model: "gpt-image-1",
+          model: IMAGE_MODEL,
           prompt: next_prompt,
           n: 1,
           size: "1024x1024",
@@ -726,7 +727,7 @@ exports.handler = async (event) => {
         if (!next_prompt.toLowerCase().includes("hyper-realistic")) next_prompt += " " + GLOBAL_STYLE;
 
         const img = await openai("images/generations", {
-          model: "gpt-image-1",
+          model: IMAGE_MODEL,
           prompt: next_prompt,
           n: 1,
           size: "1024x1536",
